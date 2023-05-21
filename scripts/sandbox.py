@@ -1,22 +1,57 @@
 import kineverse as kv
 import numpy     as np
 
+from kineverse import gm
+
 if __name__ == '__main__':
-    x, y, z = [kv.gm.Symbol(c) for c in 'xyz']
+    x, y, z = [gm.KVSymbol(c) for c in 'xyz']
 
     print(f'x >= x: {x >= x}')
     print(f'x > y: {x > y}')
     print(f'x < y: {x < y}')
     print(f'x == x: {x == x}')
     print(f'x == y: {x == y}')
-    print(f'x == new x: {x == kv.gm.Symbol("x")}')
+    print(f'x == new x: {x == gm.KVSymbol("x")}')
+    print(f'id(x) == id(new x): {id(x) == id(gm.KVSymbol("x"))}')
 
-    print(f'id(x) == id(new x): {id(x) == id(kv.gm.Symbol("x"))}')
+    e1 = x * 4
+    print(f'{e1} ({type(e1)}): {e1.symbols}')
+    e2 = y - 4
+    print(f'{e2} ({type(e2)}): {e2.symbols}')
+    e3 = e1 - e2
+    print(f'{e3} ({type(e3)}): {e3.symbols}')
 
-    d = kv.gm.KVArray(np.diag([x, y, z]))
+    e4 = e1 * 0 + 3
+    print(f'{e4} ({type(e4)}): {e4.symbols}')
 
-    symbols = kv.gm._get_symbols(d)
+    try:
+        float(e2)
+        print('Float conversion of symbolic expression did NOT raise exception')
+    except RuntimeError as e:
+        print('Float conversion of symbolic expression raised exception')
+    
+    try:
+        float(e4)
+        print('Float conversion of non-symbolic expression did not raise exception')
+    except RuntimeError as e:
+        print('Float conversion of not-symbolic expression DID raise exception')
 
-    print(f'{d}')
-    print(f'Is symbolic: {d.is_symbolic}')
-    print(f'Symbols: {d.symbols}')
+    d1 = gm.KVArray(np.diag([x, y, z]))
+
+    print(f'{d1}')
+    print(f'Is symbolic: {d1.is_symbolic}')
+    print(f'Symbols: {d1.symbols}')
+
+    d2 = gm.KVArray(np.eye(3)) * x + np.diag([1, 1], 1) * y
+    print(f'{d2} ({type(d2)})')
+    print(f'Is symbolic: {d2.is_symbolic}')
+    print(f'Symbols: {d2.symbols}')
+
+    d3 = gm.eye(3) * x + gm.diag([1, 1], 1) * y
+    print(f'{d3} ({type(d3)})')
+    print(f'Is symbolic: {d3.is_symbolic}')
+    print(f'Symbols: {d3.symbols}')
+
+    print(f'd3.T:\n{d3.T} ({type(d3.T)})')
+    print(f'Is symbolic: {d3.T.is_symbolic}')
+    print(f'Symbols: {d3.T.symbols}')
