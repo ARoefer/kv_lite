@@ -1,6 +1,33 @@
 import casadi as ca
 import numpy  as np
 
+def _Matrix(data):
+    try:
+        return ca.SX(data)
+    except NotImplementedError:
+        if hasattr(data, u'shape'):
+            m = ca.SX(*data.shape)
+        else:
+            x = len(data)
+            if isinstance(data[0], list) or isinstance(data[0], tuple):
+                y = len(data[0])
+            else:
+                y = 1
+            m = ca.SX(x, y)
+        for i in range(m.shape[0]):
+            if y > 1:
+                for j in range(m.shape[1]):
+                    try:
+                        m[i, j] = data[i][j]
+                    except:
+                        m[i, j] = data[i, j]
+            else:
+                if isinstance(data[i], list) or isinstance(data[i], tuple):
+                    m[i] = data[i][0]
+                else:
+                    m[i] = data[i]
+        return m
+
 
 class KVExpr():
     """Container wrapping CASADI expressions. 
@@ -107,6 +134,11 @@ class KVExpr():
         if self._symbols is None:
             self._symbols = frozenset({KVSymbol(str(e)) for e in ca.symvar(self._ca_data)})
         return self._symbols
+
+    def jacobian(self, symbols):
+        jac = ca.jacobian(self._ca_data, _Matrix([s._ca_data for s in symbols]))
+        np_jac = KVArray(np.array([KVExpr(e) for e in jac.elements()]).reshape(jac.shape))
+        return np_jac
 
 
 class KVSymbol(KVExpr):

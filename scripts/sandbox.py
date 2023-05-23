@@ -2,6 +2,7 @@ import kineverse as kv
 import numpy     as np
 
 from kineverse import gm
+from math      import prod
 
 if __name__ == '__main__':
     x, y, z = [gm.KVSymbol(c) for c in 'xyz']
@@ -20,6 +21,9 @@ if __name__ == '__main__':
     print(f'{e2} ({type(e2)}): {e2.symbols}')
     e3 = e1 - e2
     print(f'{e3} ({type(e3)}): {e3.symbols}')
+
+    jac_e2 = e2.jacobian([x, y])
+    print(f'{jac_e2} ({type(jac_e2)})')
 
     e4 = e1 * 0 + 3
     print(f'{e4} ({type(e4)}): {e4.symbols}')
