@@ -59,3 +59,8 @@ if __name__ == '__main__':
     print(f'd3.T:\n{d3.T} ({type(d3.T)})')
     print(f'Is symbolic: {d3.T.is_symbolic}')
     print(f'Symbols: {d3.T.symbols}')
+
+    print(f'sin(4): {gm.sin(4)}')
+    print(f'sin(e1): {gm.sin(e1)}')
+    print(f'sin(d3): {gm.sin(d3)}')
+

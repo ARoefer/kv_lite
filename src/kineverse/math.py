@@ -348,3 +348,27 @@ def diag(v, k=0):
 
 def eye(N, M=None, k=0):
     return KVArray(np.eye(N, M, k))
+
+
+sin = np.vectorize(lambda v: KVExpr(ca.sin(v._ca_data)) if isinstance(v, KVExpr) else np.sin(v))
+cos = np.vectorize(lambda v: KVExpr(ca.cos(v._ca_data)) if isinstance(v, KVExpr) else np.cos(v))
+
+asin   = np.vectorize(lambda v: KVExpr(ca.asin(v._ca_data)) if isinstance(v, KVExpr) else np.arcsin(v))
+acos   = np.vectorize(lambda v: KVExpr(ca.acos(v._ca_data)) if isinstance(v, KVExpr) else np.arccos(v))
+arcsin = asin
+arccos = acos
+
+asinh   = np.vectorize(lambda v: KVExpr(ca.asinh(v._ca_data)) if isinstance(v, KVExpr) else np.arcsinh(v))
+acosh   = np.vectorize(lambda v: KVExpr(ca.acosh(v._ca_data)) if isinstance(v, KVExpr) else np.arccosh(v))
+arcsinh = asinh
+arccosh = acosh
+
+exp = np.vectorize(lambda v: KVExpr(ca.exp(v._ca_data)) if isinstance(v, KVExpr) else np.exp(v))
+log = np.vectorize(lambda v: KVExpr(ca.log(v._ca_data)) if isinstance(v, KVExpr) else np.log(v))
+
+tan    = np.vectorize(lambda v: KVExpr(ca.tan(v._ca_data)) if isinstance(v, KVExpr) else np.tan(v))
+atan   = np.vectorize(lambda v: KVExpr(ca.atan(v._ca_data)) if isinstance(v, KVExpr) else np.arctan(v))
+arctan = atan
+tanh   = np.vectorize(lambda v: KVExpr(ca.tanh(v._ca_data)) if isinstance(v, KVExpr) else np.tanh(v))
+atanh  = np.vectorize(lambda v: KVExpr(ca.atanh(v._ca_data)) if isinstance(v, KVExpr) else np.arctanh(v))
+arctanh = atanh
