@@ -64,3 +64,8 @@ if __name__ == '__main__':
     print(f'sin(e1): {gm.sin(e1)}')
     print(f'sin(d3): {gm.sin(d3)}')
 
+    # print(f'eval({e1}, x: 2) = {e1.eval({x: 2})}')
+    # print(f'eval({e3}, x: 2, y: 5) = {e3.eval({x: 2, y: 5})}')
+
+    print(f'eval({d1}, x: 2, y: 5, z: -1) = {d1.eval({x: 2, y: 5, z: -1})}')
+

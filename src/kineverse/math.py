@@ -1,6 +1,9 @@
 import casadi as ca
 import numpy  as np
 
+from math      import prod
+
+
 def _Matrix(data):
     try:
         return ca.SX(data)
@@ -29,6 +32,49 @@ def _Matrix(data):
         return m
 
 
+class EvaluationError(Exception):
+    pass
+
+
+def _speed_up(function, parameters, shape):
+    params   = list(parameters)
+    m_params = [p._ca_data for p in params]
+    # print(str_params)
+    try:
+        f = ca.Function('f', m_params, [ca.densify(function)])
+    except:
+        f = ca.Function('f', m_params, ca.densify(function))
+    return _CompiledFunction(params, f, shape)
+
+
+class _CompiledFunction():
+    def __init__(self, params, fast_f, shape):
+        self.params = params
+        self.fast_f = fast_f
+        self.shape  = shape
+        self.buf, self.f_eval = fast_f.buffer()
+        self.out = np.zeros(prod(self.shape), order='F')
+        self.buf.set_res(0, memoryview(self.out))
+
+    def __call__(self, args : dict):
+        try:
+            filtered_args = [float(args[k]) for k in self.params]
+            return self.call_unchecked(filtered_args)
+        except KeyError as e:
+            raise EvaluationError(f'Missing variable for evaluation: {e}')
+
+    def call_unchecked(self, filtered_args):
+        """
+        :param filtered_args: parameter values in the same order as in self.str_params
+        :type filtered_args: list
+        :return:
+        """
+        filtered_args = np.array(filtered_args, dtype=float)
+        self.buf.set_arg(0, memoryview(filtered_args))
+        self.f_eval()
+        return self.out.reshape(self.shape)
+    
+
 class KVExpr():
     """Container wrapping CASADI expressions. 
        Mainly exists to avoid the nasty parts of CASADI expressions.
@@ -40,6 +86,8 @@ class KVExpr():
 
         out = super().__new__(cls)
         out._symbols = None
+        # Compiled function for evaluation
+        out._function = None
 
         # Straight copy
         if isinstance(expr, KVExpr):
@@ -56,22 +104,26 @@ class KVExpr():
 
     def __iadd__(self, other):
         self._ca_data += other
-        self._symbols = None
+        self._symbols  = None
+        self._function = None
         return self
 
     def __isub__(self, other):
         self._ca_data -= other
-        self._symbols = None
+        self._symbols  = None
+        self._function = None
         return self
 
     def __imul__(self, other):
         self._ca_data *= other
-        self._symbols = None
+        self._symbols  = None
+        self._function = None
         return self
 
     def __idiv__(self, other):
         self._ca_data /= other
-        self._symbols = None
+        self._symbols  = None
+        self._function = None
         return self
 
     def __add__(self, other):
@@ -139,6 +191,16 @@ class KVExpr():
         jac = ca.jacobian(self._ca_data, _Matrix([s._ca_data for s in symbols]))
         np_jac = KVArray(np.array([KVExpr(e) for e in jac.elements()]).reshape(jac.shape))
         return np_jac
+
+    def eval(self, args : dict):
+        if self._function is None:
+            self._function = _speed_up(self._ca_data, list(self.symbols), (1,))
+        return float(self._function(args))
+
+    def unchecked_eval(self, args):
+        if self._function is None:
+            self._function = _speed_up(self._ca_data, list(self.symbols), (1,))
+        return float(self._function.call_unchecked(args))
 
 
 class KVSymbol(KVExpr):
@@ -234,6 +296,14 @@ class KVSymbol(KVExpr):
 
         return KVSymbol(self.name, self.type - 1, self.prefix)
 
+    def eval(self, args : dict):
+        if self in args:
+            return args[self]
+        raise EvaluationError()
+    
+    def unchecked_eval(self, args):
+        return args[0]
+
 
 def Position(name, prefix=None):
     return KVSymbol(name, KVSymbol.TYPE_POSITION, prefix)
@@ -280,7 +350,8 @@ class KVArray(np.ndarray):
         # We first cast to be our class type
         obj = np.asarray(input_array).view(cls)
         # add the new attribute to the created instance
-        obj._symbols = None
+        obj._symbols  = None
+        obj._function = None
         # Finally, we must return the newly created object:
         return obj
 
@@ -337,6 +408,25 @@ class KVArray(np.ndarray):
             return super().__pow__(np.asarray([other]))
         return super().__pow__(other)
 
+    def eval(self, args : dict):
+        if self.dtype != object:
+            return self.copy()
+
+        if self._function is None:
+            flat_f = [e._ca_data if isinstance(e, KVExpr) else e for e in self.flatten()]
+            self._function = _speed_up(_Matrix(flat_f), list(self.symbols), self.shape)
+        return self._function(args)
+
+    def unchecked_eval(self, args):
+        if self.dtype != object:
+            return self.copy()
+
+        if self._function is None:
+            flat_f = [e._ca_data if isinstance(e, KVExpr) else e for e in self.flatten()]
+            self._function = _speed_up(_Matrix(flat_f), list(self.symbols), self.shape)
+        return float(self._function.call_unchecked(args))
+
+
 def array(a):
     return KVArray(np.array(a))
 
@@ -349,6 +439,9 @@ def diag(v, k=0):
 def eye(N, M=None, k=0):
     return KVArray(np.eye(N, M, k))
 
+
+sqrt = np.vectorize(lambda v: KVExpr(ca.sqrt(v._ca_data)) if isinstance(v, KVExpr) else np.sqrt(v))
+abs  = np.vectorize(lambda v: KVExpr(ca.sqrt(v._ca_data ** 2)) if isinstance(v, KVExpr) else np.abs(v))
 
 sin = np.vectorize(lambda v: KVExpr(ca.sin(v._ca_data)) if isinstance(v, KVExpr) else np.sin(v))
 cos = np.vectorize(lambda v: KVExpr(ca.cos(v._ca_data)) if isinstance(v, KVExpr) else np.cos(v))
