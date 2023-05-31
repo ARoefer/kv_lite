@@ -39,7 +39,7 @@ class EvaluationError(Exception):
 def _speed_up(function, parameters, shape):
     params   = list(parameters)
     m_params = [p._ca_data for p in params]
-    # print(str_params)
+    # print(f'Speed up function: {function}\nArgs: {m_params}')
     try:
         f = ca.Function('f', m_params, [ca.densify(function)])
     except:
@@ -53,7 +53,7 @@ class _CompiledFunction():
         self.fast_f = fast_f
         self.shape  = shape
         self.buf, self.f_eval = fast_f.buffer()
-        self.out = np.zeros(prod(self.shape), order='F')
+        self.out = np.zeros(shape) # , order='F')
         self.buf.set_res(0, memoryview(self.out))
 
     def __call__(self, args : dict):
@@ -69,10 +69,11 @@ class _CompiledFunction():
         :type filtered_args: list
         :return:
         """
-        filtered_args = np.array(filtered_args, dtype=float)
-        self.buf.set_arg(0, memoryview(filtered_args))
+        filtered_args = np.array(filtered_args, dtype=float, order='F').reshape((len(filtered_args), 1))
+        for i in range(len(self.params)):
+            self.buf.set_arg(i, memoryview(filtered_args[i]))
         self.f_eval()
-        return self.out.reshape(self.shape)
+        return self.out # .reshape(self.shape)
     
 
 class KVExpr():
@@ -359,7 +360,8 @@ class KVArray(np.ndarray):
         # see InfoArray.__array_finalize__ for comments
         if obj is None:
             return
-        self._symbols = None
+        self._symbols  = None
+        self._function = None
 
     @property
     def symbols(self):
@@ -424,7 +426,7 @@ class KVArray(np.ndarray):
         if self._function is None:
             flat_f = [e._ca_data if isinstance(e, KVExpr) else e for e in self.flatten()]
             self._function = _speed_up(_Matrix(flat_f), list(self.symbols), self.shape)
-        return float(self._function.call_unchecked(args))
+        return self._function.call_unchecked(args)
 
 
 def array(a):

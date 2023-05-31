@@ -67,5 +67,54 @@ if __name__ == '__main__':
     # print(f'eval({e1}, x: 2) = {e1.eval({x: 2})}')
     # print(f'eval({e3}, x: 2, y: 5) = {e3.eval({x: 2, y: 5})}')
 
-    print(f'eval({d1}, x: 2, y: 5, z: -1) = {d1.eval({x: 2, y: 5, z: -1})}')
+    ca = gm.ca
+
+    # m = ca.SX.sym('m', 3, 3)  # ca.SX.eye(3)
+    # # m[0, 0] = x._ca_data
+    # # m[1, 1] = y._ca_data
+    # # m[2, 2] = z._ca_data
+    # m[0, 1:] = 0
+    # m[1,  0] = 0
+    # m[1,  2] = 0
+    # m[2, :2] = 0
+
+    # print(m)
+
+    # os = list(d3.symbols)
+
+
+    # m = gm._Matrix([[x._ca_data, 0, 0],
+    #                 [0, y._ca_data, 0],
+    #                 [0, 0, z._ca_data]])
+
+    # f  = gm._speed_up(m, [x, y, z], (3, 3))
+    args = np.array([1.0, 2.0, 3.0]) # .reshape((3, 1))
+    print(d1)
+    print(d1.eval({x: 1, y: 2, z: 3}))
+    
+    print(d2)
+    print(d2.eval({x: 1, y: 2, z: 3}))
+    
+    print(d3)
+    print(d3.eval({x: 1, y: 2, z: 3}))
+
+    # f = ca.Function('f', ca.symvar(m), [ca.densify(m)])
+
+    # buf, f_eval = f.buffer()
+    
+    # print(f'symvar(m): {ca.symvar(m)}')
+    
+    # # buf.set_arg(0, memoryview(args))
+    # for i in range(len(ca.symvar(m))):
+    #     buf.set_arg(i, memoryview(args[i]))
+    
+    # res = np.asfortranarray(np.zeros(m.shape))
+
+    # buf.set_res(0, memoryview(res))
+
+    # f_eval()
+    
+    # print(res)
+
+    # print(f'eval({d1}, x: 2, y: 5, z: -1) = {d1.eval({x: 2, y: 5, z: -1})}')
 
