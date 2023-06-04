@@ -441,6 +441,15 @@ def diag(v, k=0):
 def eye(N, M=None, k=0):
     return KVArray(np.eye(N, M, k))
 
+def ones(shape):
+    return KVArray(np.ones(shape))
+
+def zeros(shape):
+    return KVArray(np.zeros(shape))
+
+def tri(N, M=None, k=0):
+    return KVArray(np.tri(N, M=M, k=k))
+
 
 sqrt = np.vectorize(lambda v: KVExpr(ca.sqrt(v._ca_data)) if isinstance(v, KVExpr) else np.sqrt(v))
 abs  = np.vectorize(lambda v: KVExpr(ca.sqrt(v._ca_data ** 2)) if isinstance(v, KVExpr) else np.abs(v))

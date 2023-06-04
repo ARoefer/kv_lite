@@ -3,13 +3,15 @@ from typing      import Any, \
                         Iterable, \
                         Union
 
+from . import spatial as gm
+
 
 class DirectedEdge():
     def __init__(self, parent, child) -> None:
         self.parent = parent
         self.child  = child
 
-    def eval(self, graph, current_tf : KVArray) -> KVArray:
+    def eval(self, graph, current_tf : gm.KVArray) -> gm.KVArray:
         pass
 
 
@@ -20,7 +22,7 @@ class Frame:
 
 class FrameView():
     """Presents a view of a frame with changed reference and transform."""
-    def __init__(self, frame : Frame, reference : str, transform : KVArray) -> None:
+    def __init__(self, frame : Frame, reference : str, transform : gm.KVArray) -> None:
         self._frame = frame
         self.reference = reference
         self.transform = transform
@@ -71,7 +73,7 @@ class Graph():
 
         # Chain to self
         if target_frame == source_frame:
-            return FrameView(self._nodes[target_frame], source_frame, KVArray.eye(4))
+            return FrameView(self._nodes[target_frame], source_frame, gm.eye(4))
 
         p_target = self._get_path(target_frame, source_frame)
         p_source = self._get_path(source_frame, target_frame)
@@ -153,8 +155,8 @@ class Graph():
 
         del self._incoming_edges[child]
 
-    def _gen_tf(self, chain : Iterable[DirectedEdge]) -> KVArray:
-        tf = KVArray.eye(4)
+    def _gen_tf(self, chain : Iterable[DirectedEdge]) -> gm.KVArray:
+        tf = gm.eye(4)
         for e in chain:
             tf = e.eval(self, tf)
         return tf

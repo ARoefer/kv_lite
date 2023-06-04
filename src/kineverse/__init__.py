@@ -1,1 +1,1 @@
-from . import math as gm
+from . import spatial as gm
