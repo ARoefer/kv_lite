@@ -5,6 +5,8 @@ from math           import prod
 from iai_bullet_sim import res_pkg_path
 
 from kineverse import gm
+from tqdm      import tqdm
+
 
 if __name__ == '__main__':
     x, y, z = [gm.KVSymbol(c) for c in 'xyz']
@@ -92,7 +94,23 @@ if __name__ == '__main__':
     for jn in windmill.joints:
         print(f'Joint: {jn}')
 
-    print(f'bTb:\n{windmill.get_fk("base", "base")}')
-    print(f'bTw:\n{windmill.get_fk("base")}')
-    print(f'hTb:\n{windmill.get_fk("wings", "base")}')
-    print(f'bTw:\n{windmill.get_fk("base", "wings")}')
+    world_T_r_arm_5 = windmill.get_fk('RARM_JOINT5_Link')
+    print(world_T_r_arm_5)
+    joint_symbols = world_T_r_arm_5.transform.symbols
+    for j in joint_symbols:
+        print(j)
+
+    constraints = km.get_constraints(joint_symbols.union({s.derivative() for s in joint_symbols}))
+    print(f'Number of constraints: {len(constraints)}')
+
+    for cn, c in constraints.items():
+        print(f'{cn}: {c}')
+
+    for x in tqdm(range(100000)):
+        world_T_r_arm_5.transform.eval(dict(zip(joint_symbols, 
+                                                np.random.uniform(-1, 1, len(joint_symbols)))))
+
+    # print(f'bTb:\n{windmill.get_fk("base", "base")}')
+    # print(f'bTw:\n{windmill.get_fk("base")}')
+    # print(f'hTb:\n{windmill.get_fk("wings", "base")}')
+    # print(f'bTw:\n{windmill.get_fk("base", "wings")}')
