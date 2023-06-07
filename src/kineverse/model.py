@@ -1,4 +1,6 @@
-from typing import Iterable
+from typing import Iterable, Union
+
+from kineverse.graph import DirectedEdge
 
 from . import spatial as gm
 from .graph import Graph,       \
@@ -18,6 +20,9 @@ class Constraint():
     @property
     def symbols(self):
         return self.expr.symbols
+    
+    def __str__(self):
+        return f'C({self.lb} <= {self.expr} <= {self.ub})'
 
 
 class ConstrainedEdge(DirectedEdge):
@@ -40,6 +45,25 @@ class Model(Graph):
         super().__init__()
         self._constraints = {}
         self._symbol_constraint_map = {}
+
+    def add_edge(self, edge: DirectedEdge, name=None):
+        out = super().add_edge(edge, name)
+
+        if isinstance(edge, ConstrainedEdge):
+            for cn, c in edge.constraints.items():
+                self.add_constraint(cn, c)
+        
+        return out
+    
+    def remove_edge(self, edge: DirectedEdge):
+        out = super().remove_edge(edge)
+
+        if isinstance(edge, ConstrainedEdge):
+            for cn in edge.constraints.keys():
+                if cn in self._constraints:
+                    self.remove_constraint(cn)
+
+        return out
 
     def add_constraint(self, name, constraint):
         if name in self._constraints:
@@ -70,7 +94,6 @@ class Model(Graph):
                     out[cn] = self._constraints[cn]
         
         return out
-
 
 
 class Body(Frame):

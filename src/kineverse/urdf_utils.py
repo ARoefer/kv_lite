@@ -34,7 +34,7 @@ class URDFJoint(ConstrainedEdge):
         if self.limit_vel is not None:
             constraints[self.name / 'velocity'] = Constraint(-self.limit_vel, self.limit_vel, self.position.tangent())
 
-        super().__init__(parent, child)
+        super().__init__(parent, child, constraints)
 
     def eval(self, graph, current_tf : gm.KVArray) -> gm.KVArray:
         if self.type == 'fixed':
@@ -156,7 +156,7 @@ def _parse_joint_node(model : Model, joint_node : ET.Element, name_prefix : Path
     limit_vel    = None if limit_node is None else float(limit_node.attrib['velocity'])
     limit_effort = None if limit_node is None else float(limit_node.attrib['effort'])
 
-    if 'lower' in limit_node.attrib:
+    if limit_node is not None and 'lower' in limit_node.attrib:
         limit_lb = float(limit_node.attrib['lower'])
         limit_ub = float(limit_node.attrib['upper'])
     
@@ -178,7 +178,7 @@ def _parse_joint_node(model : Model, joint_node : ET.Element, name_prefix : Path
                       type=type,
                       position=position,
                       axis=axis,
-                      limit_pos=(limit_lb, limit_ub),
+                      limit_pos=(limit_lb, limit_ub) if limit_lb is not None else None,
                       limit_vel=limit_vel,
                       limit_effort=limit_effort)
 

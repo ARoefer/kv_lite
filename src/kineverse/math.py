@@ -239,14 +239,14 @@ class KVSymbol(KVExpr):
         if typ not in KVSymbol.TYPE_SUFFIXES_INV:
             raise KeyError(f'Unknown symbol type {typ}')
         
-        full_name = f'{name}__{KVSymbol.TYPE_SUFFIXES_INV[typ]}' if typ != KVSymbol.TYPE_UNKNOWN else name
+        full_name = f'{str(name).replace("/", "__")}__{KVSymbol.TYPE_SUFFIXES_INV[typ]}' if typ != KVSymbol.TYPE_UNKNOWN else name
         if prefix is not None:
             full_name = f'{prefix}__{full_name}'
         
         if full_name in KVSymbol._INSTANCES:
             return KVSymbol._INSTANCES[full_name]
         
-        out = super().__new__(cls, ca.SX.sym(full_name.replace('/', '__')))
+        out = super().__new__(cls, ca.SX.sym(full_name))
         out.name = name
         out.type = typ
         out.prefix = prefix
