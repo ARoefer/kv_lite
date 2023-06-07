@@ -27,17 +27,20 @@ class FrameView():
         self.reference = reference
         self.transform = transform
     
-    def __getattribute__(self, __name: str) -> Any:
-        if __name == self.reference:
-            return self.reference
-        elif __name == self.transform:
-            return self.transform
-        return getattr(self._frame, __name)
+    @property
+    def name(self):
+        return self._frame.name
+    
+    @property
+    def frame(self):
+        return self._frame
     
     @property
     def dtype(self):
         return type(self._frame)
 
+    def __str__(self):
+        return f'T ({self.name} -> {self.reference}):\n{self.transform}'
 
 class FKChainException(Exception):
     pass
@@ -46,13 +49,15 @@ class FKChainException(Exception):
 class Graph():
     def __init__(self) -> None:
         self._nodes = {}
-        self._incoming_edges = {}
-        
+        self._incoming_edges  = {}
+        self._named_edges     = {}
+        self._inv_named_edges = {}
+
         self._nodes['world'] = Frame('world')
 
     def add_frame(self, frame : Frame):
         self._nodes[frame.name] = frame
-    
+
     def remove_frame(self, frame : Union[Frame, str]):
         name = frame.name if isinstance(frame, Frame) else frame
 
@@ -63,6 +68,11 @@ class Graph():
             del self._incoming_edges[name]
         
         del self._nodes[name]
+
+    def get_frame(self, name):
+        if name not in self._nodes:
+            raise KeyError(f'Unknown frame "{name}"')
+        return self._nodes[name]
 
     def get_fk(self, target_frame : str, source_frame : str = 'world'):
         if target_frame not in self._nodes:
@@ -117,17 +127,20 @@ class Graph():
 
         # Source is child of target 
         if p_source[-1].parent == target_frame:
-            s_T_t = gm.inverse(self._gen_tf(p_source))
+            s_T_t = gm.Transform.inverse(self._gen_tf(p_source))
             return FrameView(self._nodes[target_frame], source_frame, s_T_t)
         
         raise FKChainException(f'Cannot look up {source_frame} T {target_frame}: The frames have different roots {p_target[-1].parent} and {p_source[-1].parent}')
     
-    def add_edge(self, edge : DirectedEdge):
+    def add_edge(self, edge : DirectedEdge, name=None):
         if edge.parent not in self._nodes:
             raise KeyError(f'Cannot insert edge as {edge.parent} is not a node in the graph')
 
         if edge.child not in self._nodes:
             raise KeyError(f'Cannot insert edge as {edge.child} is not a node in the graph')
+
+        if name is not None and name in self._named_edges:
+            raise KeyError(f'Cannot insert named edge as "{name}", as name is already taken.')
 
         old_edge = self._incoming_edges[edge.child] if edge.child in self._incoming_edges else None
         self._incoming_edges[edge.child] = edge
@@ -141,6 +154,10 @@ class Graph():
                 del self._incoming_edges[edge.child]
             raise RuntimeError(f'Adding edge {edge.parent} -> {edge.child} introduces a circle: '' <- '.join([e.child for e in  path]))
 
+        if name is not None:
+            self._named_edges[name] = edge
+            self._inv_named_edges[id(edge)] = name
+
     def remove_edge(self, edge : Union[DirectedEdge, tuple]):
         if isinstance(edge, DirectedEdge):
             parent, child = edge.parent, edge.child
@@ -153,10 +170,26 @@ class Graph():
         if parent != self._incoming_edges[child].parent:
             raise KeyError(f'Edge of {child} is {self._incoming_edges[child].parent} -> {child}, not {parent} -> {child}.')
 
+        if id(edge) in self._inv_named_edges:
+            name = self._inv_named_edges[id(edge)]
+            del self._inv_named_edges[id(edge)]
+            del self._named_edges[name]
+
         del self._incoming_edges[child]
 
+    def get_edge(self, name):
+        if name not in self._named_edges:
+            raise KeyError(f'Edge "{name}" is not in graph.')
+        return self._named_edges[name]
+
+    def get_incoming_edge(self, node_name):
+        if node_name not in self._nodes:
+            raise KeyError(f'Unknown frame "{node_name}".')
+        
+        return self._incoming_edges[node_name] if node_name in self._incoming_edges else None
+
     def _gen_tf(self, chain : Iterable[DirectedEdge]) -> gm.KVArray:
-        tf = gm.eye(4)
+        tf = gm.Transform.identity()
         for e in chain:
             tf = e.eval(self, tf)
         return tf
@@ -166,7 +199,7 @@ class Graph():
         current = start
         
         while current != end and current in self._incoming_edges:
-            e = self._incoming_edges
+            e = self._incoming_edges[current]
             out.append(e)
             current = e.parent
 

@@ -1,7 +1,9 @@
 from typing import Iterable
 
-from . import graph
 from . import spatial as gm
+from .graph import Graph,       \
+                   Frame,       \
+                   DirectedEdge
 
 
 class Constraint():
@@ -18,7 +20,22 @@ class Constraint():
         return self.expr.symbols
 
 
-class Model(graph.Graph):
+class ConstrainedEdge(DirectedEdge):
+    def __init__(self, parent, child, constraints=None) -> None:
+        super().__init__(parent, child)
+        self.constraints = constraints
+
+
+class TransformEdge(DirectedEdge):
+    def __init__(self, parent, child, tf : gm.Transform) -> None:
+        super().__init__(parent, child)
+        self._transform = tf
+
+    def eval(self, graph, current_tf : gm.KVArray) -> gm.KVArray:
+        return self._transform.dot(current_tf)
+
+
+class Model(Graph):
     def __init__(self) -> None:
         super().__init__()
         self._constraints = {}
@@ -56,7 +73,7 @@ class Model(graph.Graph):
 
 
 
-class Body(graph.Frame):
+class Body(Frame):
     def __init__(name, ) -> None:
         super().__init__(name)
     

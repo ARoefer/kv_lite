@@ -1,8 +1,10 @@
 import kineverse as kv
 import numpy     as np
 
+from math           import prod
+from iai_bullet_sim import res_pkg_path
+
 from kineverse import gm
-from math      import prod
 
 if __name__ == '__main__':
     x, y, z = [gm.KVSymbol(c) for c in 'xyz']
@@ -78,4 +80,19 @@ if __name__ == '__main__':
     print(d3)
     print(d3.eval({x: 1, y: 2, z: 3}))
 
+    km = kv.Model()
+    with open(res_pkg_path('package://iai_bullet_sim/src/iai_bullet_sim/data/urdf/windmill.urdf'), 'r') as f:
+        windmill = kv.urdf.load_urdf(km, f.read())
 
+    km.add_edge(kv.TransformEdge('world', windmill.root, gm.Transform.from_xyz(0.1, 0, 0)))
+
+    for ln in windmill.links:
+        print(f'Link: {ln}')
+
+    for jn in windmill.joints:
+        print(f'Joint: {jn}')
+
+    print(f'bTb:\n{windmill.get_fk("base", "base")}')
+    print(f'bTw:\n{windmill.get_fk("base")}')
+    print(f'hTb:\n{windmill.get_fk("wings", "base")}')
+    print(f'bTw:\n{windmill.get_fk("base", "wings")}')

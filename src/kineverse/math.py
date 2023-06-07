@@ -127,6 +127,9 @@ class KVExpr():
         self._function = None
         return self
 
+    def __neg__(self):
+        return KVExpr(-self._ca_data)
+
     def __add__(self, other):
         if isinstance(other, KVExpr):
             return KVExpr(self._ca_data + other._ca_data)
@@ -193,6 +196,17 @@ class KVExpr():
         np_jac = KVArray(np.array([KVExpr(e) for e in jac.elements()]).reshape(jac.shape))
         return np_jac
 
+    def tangent(self, symbols=None):
+        """Generalized tangent expression of this expression:
+            t(q, \dot{q}) = J(q) * \dot{dot}
+         
+           Does full tangent by default, but 'symbols' argument can
+           be used to override the generation of derivatives. 
+        """
+        positions = list(symbols) if symbols is not None else list(self.symbols)
+        J = self.jacobian(positions)
+        return J.dot(KVArray([[p.derivative() for p in positions]]).T).item() # Result is 1x1
+
     def eval(self, args : dict):
         if self._function is None:
             self._function = _speed_up(self._ca_data, list(self.symbols), (1,))
@@ -232,7 +246,7 @@ class KVSymbol(KVExpr):
         if full_name in KVSymbol._INSTANCES:
             return KVSymbol._INSTANCES[full_name]
         
-        out = super().__new__(cls, ca.SX.sym(full_name))
+        out = super().__new__(cls, ca.SX.sym(full_name.replace('/', '__')))
         out.name = name
         out.type = typ
         out.prefix = prefix
@@ -428,6 +442,13 @@ class KVArray(np.ndarray):
             self._function = _speed_up(_Matrix(flat_f), list(self.symbols), self.shape)
         return self._function.call_unchecked(args)
 
+    def jacobian(self, symbols):
+        """Invokes jacobian() on all elements"""
+        return KVArray([e.jacobian(symbols) for e in self.flatten()]).reshape(self.shape + (len(symbols), )).squeeze()
+
+    def tangent(self, symbols=None):
+        """Invokes tangent() on all elements"""
+        return KVArray([e.tangent(symbols) for e in self.flatten()]).reshape(self.shape)
 
 def array(a):
     return KVArray(np.array(a))

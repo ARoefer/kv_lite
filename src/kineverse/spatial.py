@@ -90,7 +90,7 @@ class Transform:
         return KVArray([[1, 0, 0, x],
                         [0, 1, 0, y],
                         [0, 0, 1, z],
-                        [0, 0, 0, w]])
+                        [0, 0, 0, 1]])
     
     @staticmethod
     def from_euler(roll, pitch, yaw):
@@ -113,6 +113,7 @@ class Transform:
         """ Conversion of unit axis and angle to 4x4 rotation matrix according to:
             http://www.euclideanspace.com/maths/geometry/rotations/conversions/angleToMatrix/index.htm
         """
+        axis = axis.squeeze()
         ct = cos(angle)
         st = sin(angle)
         vt = 1 - ct
@@ -159,6 +160,7 @@ class Transform:
     @staticmethod
     def inverse(tf):
         inv = eye(4)
+        inv = inv.astype(object) if tf.is_symbolic else inv
         inv[:3, :3] = tf[:3, :3].T
         inv[:3, 3]  = -inv[:3, :3].dot(tf[:3, 3])
         return inv
