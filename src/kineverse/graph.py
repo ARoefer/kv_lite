@@ -69,6 +69,9 @@ class Graph():
         
         del self._nodes[name]
 
+    def get_frames(self):
+        return list(self._nodes.keys())
+
     def get_frame(self, name):
         if name not in self._nodes:
             raise KeyError(f'Unknown frame "{name}"')
@@ -181,6 +184,9 @@ class Graph():
         if name not in self._named_edges:
             raise KeyError(f'Edge "{name}" is not in graph.')
         return self._named_edges[name]
+
+    def get_edges(self):
+        return list(self._incoming_edges.values())
 
     def get_incoming_edge(self, node_name):
         if node_name not in self._nodes:
