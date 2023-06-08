@@ -1,14 +1,18 @@
 import kineverse as kv
 import numpy     as np
+import rospy
 
 from math           import prod
 from iai_bullet_sim import res_pkg_path
+from tqdm           import tqdm
+
 
 from kineverse import gm
-from tqdm      import tqdm
-
+from kineverse.ros_utils import ModelTFBroadcaster
 
 if __name__ == '__main__':
+    rospy.init_node('kv_lite_sandbox')
+
     x, y, z = [gm.KVSymbol(c) for c in 'xyz']
 
     print(f'x >= x: {x >= x}')
@@ -83,7 +87,7 @@ if __name__ == '__main__':
     print(d3.eval({x: 1, y: 2, z: 3}))
 
     km = kv.Model()
-    with open(res_pkg_path('package://iai_bullet_sim/src/iai_bullet_sim/data/urdf/windmill.urdf'), 'r') as f:
+    with open(res_pkg_path('/home/adrian/eva_ws/src/eva_core/eva_core_description/urdf/eva_core.urdf'), 'r') as f:
         windmill = kv.urdf.load_urdf(km, f.read())
 
     km.add_edge(kv.TransformEdge('world', windmill.root, gm.Transform.from_xyz(0.1, 0, 0)))
@@ -107,9 +111,23 @@ if __name__ == '__main__':
         print(f'{cn}: {c}')
 
     d_target = gm.norm(gm.point3(2.0, 1.0, 1.0) - gm.Transform.pos(world_T_r_arm_5.transform))
-    for x in tqdm(range(100000)):
-        world_T_r_arm_5.transform.eval(dict(zip(joint_symbols, 
-                                                np.random.uniform(-1, 1, len(joint_symbols)))))
+
+    tf_pub = ModelTFBroadcaster(km)
+
+    full_q_symbols = tf_pub.symbols
+
+    for x in tqdm(range(100000), desc='FK eval speed'):
+        js = dict(zip(full_q_symbols, np.sin(np.ones(len(full_q_symbols)) * (x * 0.1))))
+        d_target.eval(js)
+        tf_pub.update(js)
+        if rospy.is_shutdown():
+            exit(0)
+        rospy.sleep(0.05)
+        # bla = input('press enter for next config')
+        # if bla == 'q':
+        #     exit(0)
+
+
     J_target = d_target.jacobian(joint_symbols)
 
     for x in tqdm(range(100000), desc='J eval speed'):

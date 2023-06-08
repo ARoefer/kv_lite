@@ -1,0 +1,11 @@
+<robot name="{{path}}">
+    {% for n, joint in joints.items() %}
+    <joint name="{{n}}" type="fixed">
+        <child link="{{joint.child}}"/>
+        <parent link="{{joint.parent}}"/>
+    </joint>
+    {% endfor %}
+    {% for frame in frames %}
+    <link name="{{frame.name}}"/>
+    {% endfor %}
+</robot>
