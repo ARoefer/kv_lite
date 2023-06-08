@@ -49,7 +49,7 @@ unitY = vector3(0, 1, 0)
 unitZ = vector3(0, 0, 1)
 
 def norm(a):
-    return sqrt((a**2).sum())
+    return sqrt((a**2).sum()).item()
 
 def cross(u, v):
     """Computes the cross product between two vectors."""
@@ -168,3 +168,29 @@ class Transform:
     @staticmethod
     def identity():
         return eye(4)
+    
+    @staticmethod
+    def pos(tf):
+        return tf[:, 3]
+    
+    @staticmethod
+    def rot(tf):
+        out = KVArray(tf)
+        out[:3, 3] = 0
+        return out
+    
+    @staticmethod
+    def x(tf):
+        return tf[:, 0]
+    
+    @staticmethod
+    def y(tf):
+        return tf[:, 1]
+    
+    @staticmethod
+    def z(tf):
+        return tf[:, 2]
+    
+    @staticmethod
+    def w(tf):
+        return tf[:, 3]
