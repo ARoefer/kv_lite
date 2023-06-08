@@ -106,9 +106,20 @@ if __name__ == '__main__':
     for cn, c in constraints.items():
         print(f'{cn}: {c}')
 
+    d_target = gm.norm(gm.point3(2.0, 1.0, 1.0) - gm.Transform.pos(world_T_r_arm_5.transform))
     for x in tqdm(range(100000)):
         world_T_r_arm_5.transform.eval(dict(zip(joint_symbols, 
                                                 np.random.uniform(-1, 1, len(joint_symbols)))))
+    J_target = d_target.jacobian(joint_symbols)
+
+    for x in tqdm(range(100000), desc='J eval speed'):
+        J_target.eval(dict(zip(joint_symbols, np.random.uniform(-1, 1, len(joint_symbols)))))
+
+    t_target = d_target.tangent()
+    tangent_symbols = t_target.symbols
+
+    for x in tqdm(range(100000), desc='Tangent eval speed'):
+        t_target.eval(dict(zip(tangent_symbols, np.random.uniform(-1, 1, len(tangent_symbols)))))
 
     # print(f'bTb:\n{windmill.get_fk("base", "base")}')
     # print(f'bTw:\n{windmill.get_fk("base")}')
