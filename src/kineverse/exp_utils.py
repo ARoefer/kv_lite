@@ -4,26 +4,26 @@ from . import spatial as gm
 from .model import ConstrainedEdge
 
 
-def twist_to_se3(q, v, w) -> gm.KVArray:
+def twist_to_se3(q, v, w, epsilon=1e-6) -> gm.KVArray:
     """Generate a SE(3) transform from a twist in exponential coordinates.
         q: position
         v: linear part of the twist
         w: angular part of the twist 
     """
-    tf = gm.KVArray([[    0, -w[2],  w[1], v[0]]
-                     [ w[2],     0, -w[0], v[1]],
-                     [-w[1],  w[0],     0, v[2]],
-                     [    0,     0,     0,    0]])
-    tf = gm.exp(tf * q)
-    tf[3, :3] = 0 # Exponential makes all zeros 1
+    if w.ndim < 2:
+        w = w.reshape((len(w), 1))
+    w_hat = gm.KVArray([[       0, -w[2, 0],  w[1, 0]],
+                        [ w[2, 0],        0, -w[0, 0]],
+                        [-w[1, 0],  w[0, 0],       0]])
+    e_wq  = gm.eye(3) + gm.sin(q) * w_hat + w_hat.dot(w_hat) * (1 - gm.cos(q))
+    h     = w.T.dot(v[:3]) / (gm.norm(w**2) + epsilon)
+    lin   = (gm.eye(3) - e_wq).dot(gm.cross(w[:3], v[:3])[:3]) + w.dot(w.T)[:3].dot(v[:3]) * q
+    
+    tf         = gm.eye(4).astype(object)
+    tf[:3, :3] = e_wq
+    tf[:3,  3] = lin
+
     return tf
-
-
-def se3_to_twist(tf) -> Tuple[gm.KVArray, gm.KVArray]:
-    """Maps a SE(3) transform back into a twist."""
-    lin = gm.log(gm.KVArray(tf.T[3, :3]))
-    ang = gm.log(gm.KVArray([-tf[1, 2], tf[0, 2], -tf[0, 1]]))
-    return lin, ang
 
 
 class TwistJointEdge(ConstrainedEdge):

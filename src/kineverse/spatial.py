@@ -53,9 +53,12 @@ def norm(a):
 
 def cross(u, v):
     """Computes the cross product between two vectors."""
-    return KVArray([u[1] * v[2] - u[2] * v[1],
-                    u[2] * v[0] - u[0] * v[2],
-                    u[0] * v[1] - u[1] * v[0], 0])
+    u = np.squeeze(u)
+    v = np.squeeze(v)
+
+    return KVArray([[u[1] * v[2] - u[2] * v[1],
+                     u[2] * v[0] - u[0] * v[2],
+                     u[0] * v[1] - u[1] * v[0], 0]]).T
 
 def rotation_vector_from_matrix(rotation_matrix):
     rm = rotation_matrix
