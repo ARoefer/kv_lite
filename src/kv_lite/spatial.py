@@ -149,7 +149,7 @@ class Transform:
                         [0, 0, 0, 1]])
 
     @staticmethod
-    def from_xyz_rpy(x, y, z, rr, rp, ry):
+    def from_xyz_euler(x, y, z, rr, rp, ry):
         return Transform.from_xyz(x, y, z).dot(Transform.from_euler(rr, rp, ry))
 
     @staticmethod
@@ -180,6 +180,12 @@ class Transform:
     def rot(tf):
         out = KVArray(tf)
         out[:3, 3] = 0
+        return out
+
+    @staticmethod
+    def trans(tf):
+        out = Transform.identity()
+        out[:3, 3] = tf[:3, 3]
         return out
     
     @staticmethod
