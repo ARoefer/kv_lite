@@ -6,7 +6,7 @@ try:
    from distutils.core import setup
 
    d = generate_distutils_setup(
-      packages=['kineverse'],
+      packages=['kv_lite'],
       package_dir={'': 'src'}
    )
 
@@ -25,12 +25,12 @@ except ModuleNotFoundError:
       version='0.1.0',
       author='Adrian Roefer',
       author_email='aroefer@cs.uni-freiburg.de',
-      packages=['kineverse'],
+      packages=['kv_lite'],
       package_dir={'': 'src'},
       # scripts=['bin/script1','bin/script2'],
       url='http://pypi.python.org/pypi/kineverse/',
       license='LICENSE',
-      description='A second attempt at implementing the kineverse concept.',
+      description='A second attempt at implementing the Kineverse concept.',
       # long_description=open('README.txt').read(),
       install_requires=pip_dependencies
    )

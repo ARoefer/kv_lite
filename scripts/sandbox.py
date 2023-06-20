@@ -1,14 +1,14 @@
-import kineverse as kv
-import numpy     as np
+import kv_lite as kv
+import numpy   as np
 import rospy
 
-from math           import prod
-from iai_bullet_sim import res_pkg_path
-from tqdm           import tqdm
+from math         import prod
+from prime_bullet import res_pkg_path
+from tqdm         import tqdm
 
 
-from kineverse import gm
-from kineverse.ros_utils import ModelTFBroadcaster
+from kv_lite import gm
+from kv_lite.ros_utils import ModelTFBroadcaster
 
 if __name__ == '__main__':
     rospy.init_node('kv_lite_sandbox')

@@ -1,6 +1,6 @@
 from typing import Iterable, Union
 
-from kineverse.graph import DirectedEdge
+from .graph import DirectedEdge
 
 from . import spatial as gm
 from .graph import Graph,       \

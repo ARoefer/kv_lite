@@ -1,5 +1,5 @@
-import kineverse.exp_utils as ke
-from kineverse import gm
+import kv_lite.exp_utils as ke
+from kv_lite import gm
 
 if __name__ == '__main__':
 
