@@ -134,8 +134,111 @@ print(r.jacobian([d]))
 
 ```
 
-Creating arbitrary matrices is fine and dandy, but also offers a growing set of implementations for typical spatial entities. By default, KV-lite uses 4x4 homogenous transforms as base representation for entities from SO(3) and SE(3).
+### Transformations & Spatial Types
+
+Creating arbitrary matrices is fine and dandy, but also offers a growing set of implementations for typical spatial entities. By default, KV-lite uses 4x4 homogenous transforms as base representation for entities from SO(3) and SE(3). Let us look at a quick run-down of the options
+
+```python
+import numpy as np
+from kv_lite import gm
+
+# Create a homogeneous vector -> Not affected by translation
+v = gm.vector3(1, 2, 3)
+print(v)
+# [[1]
+#  [2]
+#  [3]
+#  [0]]
+
+# L2 norm of a vector
+print(gm.norm(v))  # >> 3.74165738...
+
+# Create a homogeneous point -> Affected by translation and rotation
+p = gm.point3(1, 2, 3)
+print(p)
+# [[1]
+#  [2]
+#  [3]
+#  [1]]
+
+# Create an identity transform
+identity = gm.Transform.identity()
+
+# A pure linear translation along the x axis by two meters
+trans1 = gm.Transform.from_xyz(2, 0, 0)
+
+# A 90 degree rotation around the Y-axis
+rot1   = gm.Transform.from_euler(0, 0, np.deg2rad(90))
+
+# A 45 degree rotation around v
+rot2   = gm.Transform.from_axis_angle(v / gm.norm(v), np.deg2rad(45))
+
+# An identity rotation from a quaternion
+rot3   = gm.Transform.from_quat(0, 0, 0, 1)
+
+# A combined rotation and translation
+# The same exists for from_xyz_aa, from_xyz_quat
+tf1    = gm.Transform.from_xyz_euler(2, 0, 0, 0, 0, np.deg2rad(90))
+
+# Use Transform.inverse to invert homogeneous transformations
+tf1_inv = gm.Transform.inverse(tf1)
+
+# gm.Transform also provides some structured introspection into transforms
+rot4   = gm.Transform.rot(tf1_inv)   # Generate a pure rotation transform from tf1_inv
+trans2 = gm.Transform.trans(tf1_inv) # Generate a pure translation transform from tf1_inv
+
+tf1_inv_x = gm.Transform.x(tf1_inv)  # X-column of transform
+tf1_inv_y = gm.Transform.y(tf1_inv)  # Y-column of transform
+tf1_inv_z = gm.Transform.z(tf1_inv)  # Z-column of transform
+tf1_inv_w = gm.Transform.w(tf1_inv)  # W-column of transform - identical to gm.Transform.pos(tf1_inv)
+
+# Of course, transform creation also works with symbols!
+a, b = [gm.KVSymbol(x) for x in 'ab']
+
+# A transform translating by 2a along X and rotating by b around Z
+tf2  = gm.Transform.from_xyz_euler(2*a, 0, 0, 0, b, 0)
+print(tf2)
+# [[KV(cos(b)) KV(0) KV(sin(b)) KV((2*a))]
+#  [KV(0) KV(1) KV(0) KV(0)]
+#  [KV((-sin(b))) KV(0) KV(cos(b)) KV(0)]
+#  [KV(0) KV(0) KV(0) KV(1)]]
+
+# Transformations are chained by matrix multiplication
+tf3 = tf1.dot(tf2)  # @ would work as well
+```
+
+### Symbol Typing
+
+So far, we have always created all symbols using `KVSymbol`. This is fine for a general use of KV-lite and its symbolic math functionality, but to use its full modelling capabilities we must understand symbol typing. In KV-lite, it is possible to create symbols of certain types: Positions, Velocities, Accelerations, Jerks, and Snaps. These symbols behave normally, but have the additional feature, that they can be differentiated and integrated. Using this system, it is possible to create different constraints for the position, velocity, etc. of one degree of freedom of a model. Additionally, we can generate the tangent expression of an expression, which models the rate of change of the function at a given point, given the derivatives of it's symbols.
+Let's make this topic a bit more approachable:
 
 ```python
 from kv_lite import gm
+
+# We create a few symbols modelling the position of degrees of freedom a, b, c
+a, b, c = [gm.Position(x) for x in 'abc']
+print(a, b, c)  # >> a__position b__position c__position
+
+# We can generate the symbols referencing the derivative and the integral of a typed symbol
+print(a.derivative())             # >> a__velocity
+print(a.derivative().integral())  # >> a__position
+
+# We cannot integrate beyond position or differentiate beyond snap
+try:
+    a.integral()
+except RuntimeError as e:
+    print(e)  # >> Cannot integrate symbol beyond position.
+
+# Let us create an expression
+e1 = a * 4 -b
+print(e1)  # >> ((4*a__position)-b__position)
+
+# We can now not just generate the jacobian wrt a__position,
+# but also generate the tangent expression
+print(e1.tangent())  # >> ((4*a__velocity)-b__velocity)
+
+# Note: A typed symbol's tangent is the symbol of its derivation
+print(a.tangent())  # >> a__velocity
 ```
+
+### Models
