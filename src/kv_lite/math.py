@@ -188,7 +188,10 @@ class KVExpr():
     @property
     def symbols(self):
         if self._symbols is None:
-            self._symbols = frozenset({KVSymbol(str(e)) for e in ca.symvar(self._ca_data)})
+            if type(self._ca_data) in {ca.SX, ca.MX, ca.DM}:
+                self._symbols = frozenset({KVSymbol(str(e)) for e in ca.symvar(self._ca_data)})
+            else:
+                self._symbols = frozenset()
         return self._symbols
 
     def jacobian(self, symbols):
@@ -207,7 +210,7 @@ class KVExpr():
         J = self.jacobian(positions)
         return J.dot(KVArray([[p.derivative() for p in positions]]).T).item() # Result is 1x1
 
-    def eval(self, args : dict):
+    def eval(self, args : dict = {}):
         if self._function is None:
             self._function = _speed_up(self._ca_data, list(self.symbols), (1,))
         return float(self._function(args))
@@ -472,28 +475,37 @@ def tri(N, M=None, k=0):
     return KVArray(np.tri(N, M=M, k=k))
 
 
-sqrt = np.vectorize(lambda v: KVExpr(ca.sqrt(v._ca_data)) if isinstance(v, KVExpr) else np.sqrt(v))
-abs  = np.vectorize(lambda v: KVExpr(ca.sqrt(v._ca_data ** 2)) if isinstance(v, KVExpr) else np.abs(v))
+def wrap_array(f):
+    def g(v):
+        if isinstance(v, np.ndarray) or isinstance(v, list) or isinstance(v, tuple): # Containers need to be wrapped
+            return f(KVArray(v))
+        elif isinstance(v, KVArray):  # KVArrays are fine
+            return f(v)
+        return f(v).item()            # v is some kind of atom
+    return g
 
-sin = np.vectorize(lambda v: KVExpr(ca.sin(v._ca_data)) if isinstance(v, KVExpr) else np.sin(v))
-cos = np.vectorize(lambda v: KVExpr(ca.cos(v._ca_data)) if isinstance(v, KVExpr) else np.cos(v))
+sqrt = wrap_array(np.vectorize(lambda v: KVExpr(ca.sqrt(v._ca_data)) if isinstance(v, KVExpr) else np.sqrt(v)))
+abs  = wrap_array(np.vectorize(lambda v: KVExpr(ca.sqrt(v._ca_data ** 2)) if isinstance(v, KVExpr) else np.abs(v)))
 
-asin   = np.vectorize(lambda v: KVExpr(ca.asin(v._ca_data)) if isinstance(v, KVExpr) else np.arcsin(v))
-acos   = np.vectorize(lambda v: KVExpr(ca.acos(v._ca_data)) if isinstance(v, KVExpr) else np.arccos(v))
+sin = wrap_array(np.vectorize(lambda v: KVExpr(ca.sin(v._ca_data)) if isinstance(v, KVExpr) else np.sin(v)))
+cos = wrap_array(np.vectorize(lambda v: KVExpr(ca.cos(v._ca_data)) if isinstance(v, KVExpr) else np.cos(v)))
+
+asin   = wrap_array(np.vectorize(lambda v: KVExpr(ca.asin(v._ca_data)) if isinstance(v, KVExpr) else np.arcsin(v)))
+acos   = wrap_array(np.vectorize(lambda v: KVExpr(ca.acos(v._ca_data)) if isinstance(v, KVExpr) else np.arccos(v)))
 arcsin = asin
 arccos = acos
 
-asinh   = np.vectorize(lambda v: KVExpr(ca.asinh(v._ca_data)) if isinstance(v, KVExpr) else np.arcsinh(v))
-acosh   = np.vectorize(lambda v: KVExpr(ca.acosh(v._ca_data)) if isinstance(v, KVExpr) else np.arccosh(v))
+asinh   = wrap_array(np.vectorize(lambda v: KVExpr(ca.asinh(v._ca_data)) if isinstance(v, KVExpr) else np.arcsinh(v)))
+acosh   = wrap_array(np.vectorize(lambda v: KVExpr(ca.acosh(v._ca_data)) if isinstance(v, KVExpr) else np.arccosh(v)))
 arcsinh = asinh
 arccosh = acosh
 
-exp = np.vectorize(lambda v: KVExpr(ca.exp(v._ca_data)) if isinstance(v, KVExpr) else np.exp(v))
-log = np.vectorize(lambda v: KVExpr(ca.log(v._ca_data)) if isinstance(v, KVExpr) else np.log(v))
+exp = wrap_array(np.vectorize(lambda v: KVExpr(ca.exp(v._ca_data)) if isinstance(v, KVExpr) else np.exp(v)))
+log = wrap_array(np.vectorize(lambda v: KVExpr(ca.log(v._ca_data)) if isinstance(v, KVExpr) else np.log(v)))
 
-tan    = np.vectorize(lambda v: KVExpr(ca.tan(v._ca_data)) if isinstance(v, KVExpr) else np.tan(v))
-atan   = np.vectorize(lambda v: KVExpr(ca.atan(v._ca_data)) if isinstance(v, KVExpr) else np.arctan(v))
+tan    = wrap_array(np.vectorize(lambda v: KVExpr(ca.tan(v._ca_data)) if isinstance(v, KVExpr) else np.tan(v)))
+atan   = wrap_array(np.vectorize(lambda v: KVExpr(ca.atan(v._ca_data)) if isinstance(v, KVExpr) else np.arctan(v)))
 arctan = atan
-tanh   = np.vectorize(lambda v: KVExpr(ca.tanh(v._ca_data)) if isinstance(v, KVExpr) else np.tanh(v))
-atanh  = np.vectorize(lambda v: KVExpr(ca.atanh(v._ca_data)) if isinstance(v, KVExpr) else np.arctanh(v))
+tanh   = wrap_array(np.vectorize(lambda v: KVExpr(ca.tanh(v._ca_data)) if isinstance(v, KVExpr) else np.tanh(v)))
+atanh  = wrap_array(np.vectorize(lambda v: KVExpr(ca.atanh(v._ca_data)) if isinstance(v, KVExpr) else np.arctanh(v)))
 arctanh = atanh
