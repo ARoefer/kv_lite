@@ -241,4 +241,6 @@ print(e1.tangent())  # >> ((4*a__velocity)-b__velocity)
 print(a.tangent())  # >> a__velocity
 ```
 
+Analogously to `gm.Position`, there are also `gm.Velocity`, `gm.Acceleration`, `gm.Jerk`, and `gm.Snap`.
+
 ### Models
