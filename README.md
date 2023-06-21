@@ -379,3 +379,30 @@ km.add_edge(kv.TransformEdge('world', windmill.root, gm.Transform.from_xyz(1, 0,
 wings_T_w = windmill.get_fk('wings')
 ```
 
+### Exponential Coordinates
+
+The current version of KV-lite includes an implementation of exponential map transformations. This is just a brief overview of the existing functionality:
+
+```python
+import kv_lite as kv
+from kv_lite import gm
+
+# Generate an exponential map transform
+tf = kv.exp.twist_to_se3(gm.vector3(1, 0, 0), 
+                         gm.vector3(0, 0, 1),
+                         gm.Position('q'))
+
+print(tf)
+
+# Create a model
+km = kv.Model()
+km.add_frame('foo')
+
+# We can also use the transform as an edge
+km.add_edge(kv.exp.TwistJointEdge(gm.vector3(1, 0, 0),
+                                  gm.vector3(0, 0, 1),
+                                  gm.Position('q')))
+
+```
+
+*Note:* Implementation is probably buggy.
