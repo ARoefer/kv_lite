@@ -3,8 +3,8 @@ from typing import Iterable, Union
 from .graph import DirectedEdge
 
 from . import spatial as gm
-from .graph import Graph,       \
-                   Frame,       \
+from .graph import Graph,        \
+                   Frame,        \
                    DirectedEdge
 
 
@@ -23,6 +23,9 @@ class Constraint():
     
     def __str__(self):
         return f'C({self.lb} <= {self.expr} <= {self.ub})'
+    
+    def __repr__(self):
+        return str(self)
 
 
 class ConstrainedEdge(DirectedEdge):
@@ -34,6 +37,15 @@ class ConstrainedEdge(DirectedEdge):
 class TransformEdge(DirectedEdge):
     def __init__(self, parent, child, tf : gm.Transform) -> None:
         super().__init__(parent, child)
+        self._transform = tf
+
+    def eval(self, graph, current_tf : gm.KVArray) -> gm.KVArray:
+        return self._transform.dot(current_tf)
+
+
+class ConstrainedTransformEdge(ConstrainedEdge):
+    def __init__(self, parent, child, tf : gm.Transform, constraints=None) -> None:
+        super().__init__(parent, child, constraints)
         self._transform = tf
 
     def eval(self, graph, current_tf : gm.KVArray) -> gm.KVArray:

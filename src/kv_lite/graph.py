@@ -103,7 +103,7 @@ class Graph():
         # Target is root and source is its child
         if len(p_target) == 0:
             if p_source[-1].parent == target_frame:
-                s_T_t = gm.inverse(self._gen_tf(p_source))
+                s_T_t = gm.Transform.inverse(self._gen_tf(p_source))
                 return FrameView(self._nodes[target_frame], source_frame, s_T_t)
             elif p_source[-1].parent != target_frame:
                 raise FKChainException(f'Cannot look up {source_frame} T {target_frame}: {target_frame} is a root and {source_frame} is not in its subtree')
@@ -119,7 +119,7 @@ class Graph():
         # Frames share a root
         if p_target[-1].parent == p_source[-1].parent:
             r_T_t = self._gen_tf(p_target)
-            s_T_r = gm.inverse(self._gen_tf(p_source))
+            s_T_r = gm.Transform.inverse(self._gen_tf(p_source))
             s_T_t = s_T_r.dot(r_T_t)
             return FrameView(self._nodes[target_frame], source_frame, s_T_t)
 
