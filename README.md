@@ -244,3 +244,138 @@ print(a.tangent())  # >> a__velocity
 Analogously to `gm.Position`, there are also `gm.Velocity`, `gm.Acceleration`, `gm.Jerk`, and `gm.Snap`.
 
 ### Models
+
+All the mathematical tools we have seen before are used to build models of articulated structures. Models are represented by the `Model` class. KV-lite represents articulated structures as acyclic directed forest graph. The nodes in this graph define *frames* and are connected by edges, which represent the *transformations* between these frames. The graph can be queried for a frame w.r.t. another frame, which is calculated by traversing the graph and aggregating the transformations represented by the edges. If you are familiar with ROS' TF-tree, none of this will be new to you.
+Lastly, the model also holds the constraints for the symbols used in describing the transformations. Constraints can be added manually, but generally edges can also define them so that they are automatically added or removed with the edge. The model can be queried for the constraints relevant to a given (set) of symbols.
+
+Enough theory, let us look at a few examples:
+
+```python
+import kv_lite as kv
+import numpy   as np
+
+from kv_lite import gm
+
+# km -> kinematic model
+km = kv.Model()
+
+# The frame "world" is always defined
+# get_fk() returns a "FrameView" which holds the frame data 
+# as well as the specified transformation
+w_T_w = km.get_fk('world', 'world')
+print(w_T_w)
+# T (world -> world):
+# [[1. 0. 0. 0.]
+#  [0. 1. 0. 0.]
+#  [0. 0. 1. 0.]
+#  [0. 0. 0. 1.]]
+
+# Name of the frame
+print(w_T_w.name)       # >> world
+# Name of the reference frame of the transform
+print(w_T_w.reference)  # >> world
+# Datatype of the frame
+print(w_T_w.dtype)      # >> <class 'kv_lite.graph.Frame'>
+# Original frame's data
+print(w_T_w.frame)      # >> Frame(name='world')
+# Homogeneous transformation
+print(w_T_w.transform)
+# [[1. 0. 0. 0.]
+#  [0. 1. 0. 0.]
+#  [0. 0. 1. 0.]
+#  [0. 0. 0. 1.]]
+
+# Adding a new frame with no additional data
+km.add_frame(kv.Frame('lol'))
+
+try:
+    lol_T_w = km.get_fk('lol')   # By default we look up everything to "world"
+except kv.FKChainException as e: # When no path is found, an exception is raised
+    print(e)
+
+# Let us create some symbols for different degrees of freedom
+a, b, c = [gm.Position(x) for x in 'abc']
+
+# Adding an edge connecting "lol" to "world" with a simple translation along X
+km.add_edge(kv.TransformEdge('world', 'lol', gm.Transform.from_xyz(a + 1, 0, 0)))
+
+# Now we can look up the forward kinematic of "lol" to "world"
+lol_T_w = km.get_fk('lol')
+print(lol_T_w)
+# T (lol -> world):
+# [[KV(1) KV(0) KV(0) KV((a__position+1))]
+#  [0.0 1.0 0.0 0.0]
+#  [0.0 0.0 1.0 0.0]
+#  [0.0 0.0 0.0 1.0]]
+
+# We can of course also look up the inverse:
+w_T_lol = km.get_fk('world', 'lol')
+print(w_T_lol)
+# [[KV(1) 0.0 0.0 KV(-(a__position+1))]
+#  [KV(0) 1.0 0.0 KV(0)]
+#  [KV(0) 0.0 1.0 KV(0)]
+#  [0.0 0.0 0.0 1.0]]
+
+# Adding another frame
+km.add_frame(kv.Frame('foo'))
+
+# Add an edge connecting "foo" to "lol", rotating it around lol's Y axis at a distance of 1 meter
+# Constraints need some name to identify them uniquely
+km.add_edge(kv.ConstrainedTransformEdge('lol', 'foo', gm.Transform.from_euler(0, b, 0).dot(gm.Transform.from_xyz(0, 0, 1)),
+                                        {'limit position b': kv.Constraint(np.deg2rad(-45), np.deg2rad(-45), b)}))
+
+# Getting the FK of "foo" in "world"
+foo_T_w = km.get_fk('foo')
+print(foo_T_w)
+# T (foo -> world):
+# [[KV(cos(b__position)) KV(0) KV(sin(b__position)) KV((sin(b__position)+(a__position+1)))]
+#  [KV(0) KV(1) KV(0) KV(0)]
+#  [KV((-sin(b__position))) KV(0) KV(cos(b__position)) KV(cos(b__position))]
+#  [KV(0) KV(0) KV(0) KV(1)]]
+
+# We can now use the constraint query feature
+print(km.get_constraints(foo_T_w.transform.symbols))
+# {'limit position b': C(-0.7853981633974483 <= b__position <= -0.7853981633974483)}
+```
+
+### URDF
+
+Manual model building is good to understand, but typically you will already have articulated structures specified as URDF that you want to load. KV-lite offers a few extension modules of the core functionality. One of these is for loading URDF files. The process is simple, but for this example we need the data from [prime_bullet](https://github.com/ARoefer/prime_bullet).
+
+```python
+import kv_lite      as kv
+import prime_bullet as pb
+
+from kv_lite import gm
+from pathlib import Path
+
+# Create an empty model
+km = kv.Model()
+
+with open(pb.res_pkg_path('package://prime_bullet/urdf/windmill.urdf')) as f:
+    # Load the URDF into the model
+    windmill = kv.urdf.load_urdf(km, f.read())
+
+# "windmill" is a URDF-style interface to the model
+print(windmill.links)      # Print the links in the model
+print(windmill.joints)     # Print the joints in the model
+print(windmill.q)          # Print position symbols
+print(windmill.q_dot)      # Print velocity symbols
+print(windmill.root_link)  # Local name of root frame
+
+# Note that the URDF interface can look up FKs using the local link names
+# It will try the local lookup first, then try to resolve names globally
+wings_T_root = windmill.get_fk('wings', 'base')
+
+try:
+    wings_T_w = windmill.get_fk('wings')  # The default reference frame is still "world"
+except kv.FKChainException as e:          # There is no connection between "windmill/base" and "world"
+    print(e)
+
+# Add a static transform between the base of the windmill and "world"
+km.add_edge(kv.TransformEdge('world', windmill.root, gm.Transform.from_xyz(1, 0, 0)))
+
+# Now the lookup works
+wings_T_w = windmill.get_fk('wings')
+```
+
