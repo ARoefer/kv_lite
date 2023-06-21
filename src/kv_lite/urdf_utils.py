@@ -99,7 +99,7 @@ class URDFObject():
     
     @property
     def q_dot(self):
-        return {p.derivative() for p in self.q_symbols}
+        return {p.derivative() for p in self.q}
 
 
 def _parse_origin_node(on : ET.Element):
