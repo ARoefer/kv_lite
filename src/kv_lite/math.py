@@ -183,11 +183,11 @@ class KVExpr():
 
     @property
     def is_zero(self):
-        return self.__ca_data.is_zero()
+        return self._ca_data.is_zero()
 
     @property
     def is_one(self):
-        return self.__ca_data.is_one()
+        return self._ca_data.is_one()
 
     @property
     def is_symbolic(self):

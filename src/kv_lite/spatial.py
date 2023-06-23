@@ -35,6 +35,9 @@ from .math import KVExpr, \
                   ones,  \
                   zeros, \
                   tri, \
+                  vstack, \
+                  hstack, \
+                  stack, \
                   EvaluationError
 
 
