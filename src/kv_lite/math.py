@@ -182,6 +182,14 @@ class KVExpr():
         return f'KV({self._ca_data})'
 
     @property
+    def is_zero(self):
+        return self.__ca_data.is_zero()
+
+    @property
+    def is_one(self):
+        return self.__ca_data.is_one()
+
+    @property
     def is_symbolic(self):
         return len(self.symbols) > 0
 
@@ -362,6 +370,10 @@ def _get_symbols(nl):
     return nl.symbols if isinstance(nl, KVExpr) else set()
 
 
+_vec_is_zero = np.vectorize(lambda v: v.is_zero if isinstance(v, KVExpr) else v == 0)
+_vec_is_one  = np.vectorize(lambda v: v.is_one  if isinstance(v, KVExpr) else v == 1)
+
+
 class KVArray(np.ndarray):
     def __new__(cls, input_array):
         # Input array is an already formed ndarray instance
@@ -379,6 +391,14 @@ class KVArray(np.ndarray):
             return
         self._symbols  = None
         self._function = None
+
+    @property
+    def is_zero(self):
+        return _vec_is_zero(self).min()
+
+    @property
+    def is_one(self):
+        return _vec_is_one(self).min()
 
     @property
     def symbols(self):
