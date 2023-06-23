@@ -157,8 +157,8 @@ class KVExpr():
 
     def __rsub__(self, other):
         if isinstance(other, KVExpr):
-            return KVExpr(self._ca_data - other._ca_data)
-        return KVExpr(self._ca_data - other)
+            return KVExpr(other._ca_data - self._ca_data)
+        return KVExpr(other) - KVExpr(self._ca_data)
 
     def __rmul__(self, other):
         if isinstance(other, KVExpr):
@@ -167,8 +167,8 @@ class KVExpr():
 
     def __rdiv__(self, other):
         if isinstance(other, KVExpr):
-            return KVExpr(self._ca_data / other._ca_data)
-        return KVExpr(self._ca_data / other)
+            return KVExpr(other._ca_data / self._ca_data)
+        return KVExpr(other) / KVExpr(self._ca_data)
 
     def __pow__(self, other):
         if isinstance(other, KVExpr):
