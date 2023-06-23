@@ -494,6 +494,15 @@ def zeros(shape):
 def tri(N, M=None, k=0):
     return KVArray(np.tri(N, M=M, k=k))
 
+def hstack(tup):
+    return KVArray(np.hstack(tup))
+
+def vstack(tup):
+    return KVArray(np.vstack(tup))
+
+def stack(arrays, axis):
+    return KVArray(np.stack(arrays, axis))
+
 
 def wrap_array(f):
     def g(v):
