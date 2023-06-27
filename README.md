@@ -24,7 +24,7 @@ Some of the examples require additional packages. Currently it is
 
  - [roebots](https://github.com/ARoefer/roebots) a package collecting some utility functions for working with robotics. Used here for resolving ROS package paths without a running ROS core.
 
- - [prime_bullet](https://github.com/ARoefer/prime_bullet) an object-oriented wrapper for PyBullet which tries to offer a game-engine like with the physics simulator.
+ - [prime_bullet](https://github.com/ARoefer/prime_bullet) an object-oriented wrapper for PyBullet which tries to offer a game-engine like interaction with the physics simulator.
 
 
 ## Usage
