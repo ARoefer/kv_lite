@@ -52,7 +52,10 @@ unitY = vector3(0, 1, 0)
 unitZ = vector3(0, 0, 1)
 
 def norm(a):
-    return sqrt((a**2).sum()).item()
+    rt = sqrt((a**2).sum())
+    if isinstance(rt, np.ndarray):
+        return rt.item()
+    return rt
 
 def cross(u, v):
     """Computes the cross product between two vectors."""
@@ -177,7 +180,7 @@ class Transform:
     
     @staticmethod
     def pos(tf):
-        return tf[:, 3]
+        return tf[:, 3].reshape((4, 1))
     
     @staticmethod
     def rot(tf):
@@ -193,16 +196,16 @@ class Transform:
     
     @staticmethod
     def x(tf):
-        return tf[:, 0]
+        return tf[:, 0].reshape((4, 1))
     
     @staticmethod
     def y(tf):
-        return tf[:, 1]
+        return tf[:, 1].reshape((4, 1))
     
     @staticmethod
     def z(tf):
-        return tf[:, 2]
+        return tf[:, 2].reshape((4, 1))
     
     @staticmethod
     def w(tf):
-        return tf[:, 3]
+        return tf[:, 3].reshape((4, 1))

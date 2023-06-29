@@ -145,7 +145,7 @@ def _parse_joint_node(model : Model, joint_node : ET.Element, name_prefix : Path
     child   = joint_node.find('child').attrib['link']
     origin  = _parse_origin_node(joint_node.find('origin'))
     ax_node = joint_node.find('axis')
-    axis    = gm.vector3(0, 0, 0) if ax_node is None else gm.vector3(*[float(v) for v in ax_node.attrib['xyz'].split(' ') if v != ''])
+    axis    = gm.vector3(1, 0, 0) if ax_node is None else gm.vector3(*[float(v) for v in ax_node.attrib['xyz'].split(' ') if v != ''])
 
     limit_node = joint_node.find('limit')
     if type in {'revolute', 'prismatic'} and limit_node is None:
