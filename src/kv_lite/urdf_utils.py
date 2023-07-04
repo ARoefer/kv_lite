@@ -7,7 +7,9 @@ from .model import Model,        \
                    ConstrainedEdge, \
                    Body,         \
                    Frame,        \
-                   Constraint
+                   Constraint,   \
+                   Inertial,     \
+                   Geometry
 
 from pathlib import Path
 
@@ -111,24 +113,62 @@ def _parse_origin_node(on : ET.Element):
     return translation.dot(rotation)
 
 
+def _parse_inertial(node : ET.Element) -> Inertial:
+    if node is None:
+        return Inertial(gm.Transform.identity(), 1, gm.eye(3))
+    mnode   = node.find('inertia')
+    imatrix = gm.eye(3)
+    if mnode is not None:
+        imatrix = gm.KVArray([[float(mnode.attrib['ixx']), float(mnode.attrib['ixy']), float(mnode.attrib['ixz'])],
+                              [float(mnode.attrib['ixy']), float(mnode.attrib['iyy']), float(mnode.attrib['iyz'])],
+                              [float(mnode.attrib['ixz']), float(mnode.attrib['iyz']), float(mnode.attrib['izz'])]])
+
+    return Inertial(_parse_origin_node(node.find('origin')),
+                    float(node.find('mass').attrib['value']) if node.find('mass') is not None else 1.0,
+                    imatrix)
+
+
+def _parse_geom_node(node : ET.Element):
+    origin   = _parse_origin_node(node.find('origin'))
+    geometry = node.find('geometry') # type: ET.Element
+    geom     = geometry[0]
+    if geom.tag == 'mesh':
+        scale = gm.vector3(1, 1, 1)
+        if 'scale' in geom.attrib:
+            scale = gm.vector3(*[float(c) for c in geom.attrib['scale'].split(' ') if c != ''])
+        return Geometry('mesh', geom.attrib['filename'], scale, origin)
+    elif geom.tag == 'box':
+        return Geometry('box', None, gm.vector3(*[float(c) for c in geom.attrib['size'].split(' ') if c != '']), origin)
+    elif geom.tag == 'cylinder':
+        return Geometry('cylinder',
+                        None,
+                        gm.vector3(float(geom.attrib['radius']), float(geom.attrib['radius']), float(geom.attrib['length'])) * 2,
+                        origin)
+    elif geom.tag == 'sphere':
+        return Geometry('sphere',
+                        None,
+                        gm.vector3(2, 2, 2) * float(geom.attrib['radius']),
+                        origin)
+    else:
+        raise KeyError(f'Unknown URDF geometry "{geom.tag}"')
+
+
 def _parse_link_node(model : Model, link_node : ET.Element,
                      name_prefix : Path, use_visual_as_collision=True):
     inertial_node = link_node.find('inertial')
-    if inertial_node is not None:
-        pass
-    else:
-        pass
+    inertial = _parse_inertial(inertial_node)
 
     collision_nodes = link_node.findall('collision')
     if len(collision_nodes) == 0 and use_visual_as_collision:
         collision_nodes = link_node.findall('visual')
 
-    if len(collision_nodes):
-        for cn in collision_nodes:
-            origin   = _parse_origin_node(cn.find('origin'))
-            geometry = cn.find('geometry')
-            
-    model.add_frame(Frame(name_prefix / link_node.attrib['name']))
+    coll_geometries = [_parse_geom_node(cn) for cn in collision_nodes]
+    vis_geometries  = [_parse_geom_node(cn) for cn in link_node.findall('visual')]
+
+    model.add_frame(Body(name_prefix / link_node.attrib['name'],
+                         inertial,
+                         coll_geometries,
+                         vis_geometries if len(vis_geometries) > 0 else None))
     return name_prefix / link_node.attrib['name']
 
 
@@ -187,7 +227,7 @@ def _parse_joint_node(model : Model, joint_node : ET.Element, name_prefix : Path
 
 
 
-def load_urdf(model : Model, urdf : str, name=None) -> URDFObject:
+def load_urdf(model : Model, urdf : str, name=None, use_visual_as_collision=True) -> URDFObject:
 
     # Using ElementTree, because the Python implementation of URDF is fickle
     root = ET.fromstring(urdf)
@@ -202,7 +242,10 @@ def load_urdf(model : Model, urdf : str, name=None) -> URDFObject:
 
     links = {}
     for link in root.findall('link'):
-        links[link.attrib['name']] = _parse_link_node(model, link, Path(name))
+        links[link.attrib['name']] = _parse_link_node(model,
+                                                      link,
+                                                      Path(name),
+                                                      use_visual_as_collision=use_visual_as_collision)
 
 
     joint_queue = Queue()

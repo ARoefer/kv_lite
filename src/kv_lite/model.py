@@ -1,4 +1,6 @@
-from typing import Iterable, Union
+from dataclasses import dataclass
+from typing      import Iterable, \
+                        Union
 
 from .graph import DirectedEdge
 
@@ -108,8 +110,27 @@ class Model(Graph):
         return out
 
 
+@dataclass
+class Inertial:
+    origin  : gm.KVArray
+    mass    : float
+    moments : gm.KVArray
+
+
+@dataclass
+class Geometry:
+    type      : str
+    mesh_path : str
+    dim_scale : gm.KVArray = gm.vector3(1, 1, 1)
+    origin    : gm.KVArray = gm.Transform.identity()
+
+
 class Body(Frame):
-    def __init__(name, ) -> None:
+    def __init__(self, name, inertial : Inertial,
+                       geom_collision : Iterable[Geometry],
+                       geom_visual : Iterable[Geometry] = None) -> None:
         super().__init__(name)
-    
-    
+
+        self.inertial       = inertial
+        self.geom_collision = geom_collision
+        self.geom_visual    = geom_visual if geom_visual is not None else geom_collision
