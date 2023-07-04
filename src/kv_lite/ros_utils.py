@@ -8,27 +8,55 @@ from pathlib import Path
 from geometry_msgs.msg  import TransformStamped as TransformStampedMsg
 
 from .      import spatial as gm
-from .model import Model
+from .model import Model, \
+                   Body
+
+
+def rot3_to_rpy(rot3):
+    sy = gm.sqrt(rot3[0,0] * rot3[0,0] + rot3[2,2] * rot3[2,2])
+
+    if sy >= 1e-6:
+        return (gm.atan2(rot3[2,1], rot3[2,2]), 
+                gm.atan2(-rot3[2,0], sy), 
+                gm.atan2(rot3[1,0], rot3[0,0]))
+    else:
+        return (gm.atan2(-rot3[1,2], rot3[1,1]), 
+                gm.atan2(-rot3[2,0], sy), 0)
+
+
+def tf_to_rpy_str(tf : gm.KVArray):
+    rpy = rot3_to_rpy(tf)
+    return ' '.join([str(float(x)) for x in rpy])
+
+
+def tf_to_xyz_str(tf : gm.KVArray):
+    xyz = gm.Transform.pos(tf).flatten()[:3]
+    return ' '.join([str(float(x)) for x in xyz])
+
 
 env = Environment(
     loader=FileSystemLoader(f'{Path(__file__).parent}/../../data'),
     autoescape=select_autoescape(['html', 'xml'])
 )
+env.globals.update(tf_to_xyz_str=tf_to_xyz_str)
+env.globals.update(tf_to_rpy_str=tf_to_rpy_str)
+env.globals.update(Body=Body)
+env.globals.update(isinstance=isinstance)
+env.globals.update(float=float)
+
 urdf_template = env.get_template('urdf_template.jinja')
 
 
-def gen_urdf(model : Model):
-    frames = set(model.get_frames())
-    frames.remove('world')
+def gen_urdf(model : Model, collision_alpha=0.0):
+    frames = [model.get_frame(f) for f in model.get_frames()]
+    # frames.remove('world')
 
     joints = {f'{j.child}_joint': j for j in model.get_edges()}
 
     sorted_tfs = list(joints.items())
     tf_stack   = gm.KVArray(np.vstack([model.get_fk(j.child, j.parent).transform[:3] for _, j in sorted_tfs]))
 
-    print(type(tf_stack))
-
-    return urdf_template.render(frames=frames, joints=joints), \
+    return urdf_template.render(frames=frames, joints=joints, collision_alpha=collision_alpha), \
            [(str(j.parent), str(j.child)) for _, j in sorted_tfs], tf_stack
 
 
@@ -62,14 +90,16 @@ def real_quat_from_matrix(frame):
     return (float(qx), float(qy), float(qz), float(qw))
 
 
+
+
 class ModelTFBroadcaster(object):
-    def __init__(self, model : Model):
+    def __init__(self, model : Model, collision_alpha=0.0):
         self.static_broadcaster  = tf2_ros.StaticTransformBroadcaster()
         self.dynamic_broadcaster = tf2_ros.TransformBroadcaster()
-        self.refresh_model(model)
+        self.refresh_model(model, collision_alpha=collision_alpha)
 
-    def refresh_model(self, model : Model):
-        urdf, self.transforms, self.tf_stack = gen_urdf(model)
+    def refresh_model(self, model : Model, collision_alpha=0.0):
+        urdf, self.transforms, self.tf_stack = gen_urdf(model, collision_alpha=collision_alpha)
 
         rospy.set_param('robot_description', urdf)
 

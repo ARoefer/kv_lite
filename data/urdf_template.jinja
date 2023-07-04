@@ -1,4 +1,8 @@
 <robot name="{{path}}">
+    <material name="mat_collision">
+        <color rgba="1 1 1 {{collision_alpha}}"/>
+    </material>
+
     {% for n, joint in joints.items() %}
     <joint name="{{n}}" type="fixed">
         <child link="{{joint.child}}"/>
@@ -6,6 +10,47 @@
     </joint>
     {% endfor %}
     {% for frame in frames %}
+
+    {% if isinstance(frame, Body) %}
+    <link name="{{frame.name}}">
+        {% for v in frame.geom_visual %}
+        <visual>
+            <origin xyz="{{tf_to_xyz_str(v.origin)}}" rpy="{{tf_to_rpy_str(v.origin)}}"/>
+            <geometry>
+            {% if v.type == 'box' %}
+                <box size="{{float(v.dim_scale[0])}} {{float(v.dim_scale[1])}} {{float(v.dim_scale[2])}}"/>
+            {% elif v.type == 'sphere' %}
+                <sphere radius="{{float(v.dim_scale[0]) * 0.5}}"/>
+            {% elif v.type == 'cylinder' %}
+                <cylinder radius="{{float(v.dim_scale[0]) * 0.5}}" length="{{float(v.dim_scale[2])}}"/>
+            {% elif v.type == 'mesh' %}
+                <mesh scale="{{float(v.dim_scale[0])}} {{float(v.dim_scale[1])}} {{float(v.dim_scale[2])}}" filename="{{v.mesh_path}}"/>
+            {% endif %}
+            </geometry>
+        </visual>
+        {% endfor %}
+        {% if collision_alpha > 0.0 %}
+            {% for v in frame.geom_collision %}
+            <visual>
+                <origin xyz="{{tf_to_xyz_str(v.origin)}}" rpy="{{tf_to_rpy_str(v.origin)}}"/>
+                <geometry>
+                {% if v.type == 'box' %}
+                    <box size="{{float(v.dim_scale[0])}} {{float(v.dim_scale[1])}} {{float(v.dim_scale[2])}}"/>
+                {% elif v.type == 'sphere' %}
+                    <sphere radius="{{float(v.dim_scale[0]) * 0.5}}"/>
+                {% elif v.type == 'cylinder' %}
+                    <cylinder radius="{{float(v.dim_scale[0]) * 0.5}}" length="{{float(v.dim_scale[2])}}"/>
+                {% elif v.type == 'mesh' %}
+                    <mesh scale="{{float(v.dim_scale[0])}} {{float(v.dim_scale[1])}} {{float(v.dim_scale[2])}}" filename="{{v.mesh_path}}"/>
+                {% endif %}
+                </geometry>
+                <material name="mat_collision"/>
+            </visual>
+            {% endfor %}
+        {% endif %}
+    </link>
+    {% else %}
     <link name="{{frame.name}}"/>
+    {% endif %}
     {% endfor %}
 </robot>
