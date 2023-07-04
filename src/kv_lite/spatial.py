@@ -24,6 +24,7 @@ from .math import KVExpr, \
                   log,  \
                   tan,  \
                   atan,  \
+                  atan2,  \
                   arctan,  \
                   tanh,  \
                   atanh,  \

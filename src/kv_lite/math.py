@@ -513,6 +513,11 @@ def wrap_array(f):
         return f(v).item()            # v is some kind of atom
     return g
 
+def atan2(a, b):
+    a = a._ca_data if isinstance(a, KVExpr) else a
+    b = b._ca_data if isinstance(b, KVExpr) else b
+    return KVExpr(ca.atan2(a, b))
+
 sqrt = wrap_array(np.vectorize(lambda v: KVExpr(ca.sqrt(v._ca_data)) if isinstance(v, KVExpr) else np.sqrt(v)))
 abs  = wrap_array(np.vectorize(lambda v: KVExpr(ca.sqrt(v._ca_data ** 2)) if isinstance(v, KVExpr) else np.abs(v)))
 
