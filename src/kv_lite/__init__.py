@@ -15,4 +15,7 @@ from .model import Model,           \
                    Constraint,      \
                    ConstrainedEdge, \
                    TransformEdge,   \
-                   ConstrainedTransformEdge
+                   ConstrainedTransformEdge, \
+                   Body, \
+                   Geometry, \
+                   Inertial
