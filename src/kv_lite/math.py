@@ -133,21 +133,29 @@ class KVExpr():
     def __add__(self, other):
         if isinstance(other, KVExpr):
             return KVExpr(self._ca_data + other._ca_data)
+        elif isinstance(other, np.ndarray):
+            return other + self
         return KVExpr(self._ca_data + other)
 
     def __sub__(self, other):
         if isinstance(other, KVExpr):
             return KVExpr(self._ca_data - other._ca_data)
+        elif isinstance(other, np.ndarray):
+            return other.__rsub__(self)
         return KVExpr(self._ca_data - other)
 
     def __mul__(self, other):
         if isinstance(other, KVExpr):
             return KVExpr(self._ca_data * other._ca_data)
+        elif isinstance(other, np.ndarray):
+            return other * self
         return KVExpr(self._ca_data * other)
 
     def __div__(self, other):
         if isinstance(other, KVExpr):
             return KVExpr(self._ca_data / other._ca_data)
+        elif isinstance(other, np.ndarray):
+            return other.__rsub__(self)
         return KVExpr(self._ca_data / other)
 
     def __radd__(self, other):
@@ -173,6 +181,8 @@ class KVExpr():
     def __pow__(self, other):
         if isinstance(other, KVExpr):
             return KVExpr(self._ca_data ** other._ca_data)
+        elif isinstance(other, np.ndarray):
+            return KVArray([self])**other
         return KVExpr(self._ca_data ** other)
 
     def __str__(self):
