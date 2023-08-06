@@ -477,7 +477,7 @@ class KVArray(np.ndarray):
 
     def jacobian(self, symbols):
         """Invokes jacobian() on all elements"""
-        return KVArray([e.jacobian(symbols) for e in self.flatten()]).reshape(self.shape + (len(symbols), )).squeeze()
+        return vstack([e.jacobian(symbols) if isinstance(e, KVExpr) else zeros(len(symbols)) for e in self.flatten()]).reshape(self.shape + (len(symbols), )).squeeze()
 
     def tangent(self, symbols=None):
         """Invokes tangent() on all elements"""

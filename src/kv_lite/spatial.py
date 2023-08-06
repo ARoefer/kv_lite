@@ -185,7 +185,7 @@ class Transform:
     
     @staticmethod
     def rot(tf):
-        out = KVArray(tf)
+        out = tf * 1
         out[:3, 3] = 0
         return out
 

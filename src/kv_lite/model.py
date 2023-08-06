@@ -12,9 +12,9 @@ from .graph import Graph,        \
 
 class Constraint():
     def __init__(self, lb : gm.KVExpr, ub : gm.KVExpr, expr : gm.KVExpr) -> None:
-        self.lb   = lb
-        self.ub   = ub
-        self.expr = expr
+        self.lb   = lb   if not isinstance(lb, gm.KVArray) else lb.item()
+        self.ub   = ub   if not isinstance(ub, gm.KVArray) else ub.item()
+        self.expr = expr if not isinstance(expr, gm.KVArray) else expr.item()
     
     def matrix(self):
         return gm.KVArray([self.lb, self.ub, self.expr])
