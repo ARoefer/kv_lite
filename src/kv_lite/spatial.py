@@ -39,6 +39,8 @@ from .math import KVExpr, \
                   vstack, \
                   hstack, \
                   stack, \
+                  min, \
+                  max, \
                   EvaluationError
 
 
