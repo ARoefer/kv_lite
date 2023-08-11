@@ -14,25 +14,10 @@ def twist_to_se3_special(q, v, w, epsilon=1e-6) -> gm.KVArray:
     if w.ndim < 2:
         w = w.reshape((len(w), 1))
 
-    tf         = gm.eye(4).astype(object)
-
     if np.linalg.norm(w) < epsilon:
-        tf[:3,  3] = v[:3].flatten() * q
-    else:
+        return gm.Transform.from_xyz(*(v[:3].flatten() * q))
 
-        w_hat = gm.KVArray([[       0, -w[2, 0],  w[1, 0]],
-                            [ w[2, 0],        0, -w[0, 0]],
-                            [-w[1, 0],  w[0, 0],       0]])
-        e_wq  = gm.eye(3) + gm.sin(q) * w_hat + w_hat.dot(w_hat) * (1 - gm.cos(q))
-
-        h     = w[:3].T.dot(v[:3]) / (gm.norm(w[:3]**2) + epsilon)
-
-        lin   = (gm.eye(3) - e_wq).dot(gm.cross(w[:3], v[:3])[:3]) + w[:3].dot(w[:3].T)[:3].dot(v[:3]) * q
-        
-        tf[:3, :3] = e_wq
-        tf[:3,  3] = lin.flatten()
-
-    return tf
+    return twist_to_se3(q, v, w, epsilon=1e-6)
 
 def twist_to_se3(q, v, w, epsilon=1e-6) -> gm.KVArray:
     """Generate a SE(3) transform from a twist in exponential coordinates.
