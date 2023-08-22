@@ -155,7 +155,7 @@ class KVExpr():
         if isinstance(other, KVExpr):
             return KVExpr(self._ca_data / other._ca_data)
         elif isinstance(other, np.ndarray):
-            return other.__rsub__(self)
+            return other.__rdiv__(self)
         return KVExpr(self._ca_data / other)
 
     def __radd__(self, other):
