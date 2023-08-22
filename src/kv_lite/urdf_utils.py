@@ -44,7 +44,7 @@ class URDFJoint(ConstrainedEdge):
         elif self.type == 'revolute' or self.type == 'continuous':
             return self.origin.dot(gm.Transform.from_axis_angle(self.axis, self.position)).dot(current_tf)
         elif self.type == 'prismatic':
-            return self.origin.dot(gm.Transform.from_xyz(*(self.axis.T[:3] * self.position))).dot(current_tf)
+            return self.origin.dot(gm.Transform.from_xyz(*(self.axis[:3].T[0] * self.position))).dot(current_tf)
 
         raise RuntimeError(f'Unknown joint type {self.type}')
 
@@ -191,12 +191,12 @@ def _parse_joint_node(model : Model, joint_node : ET.Element, name_prefix : Path
     if type in {'revolute', 'prismatic'} and limit_node is None:
         raise RuntimeError(f'Joint type "{type}" requires limit node.')
     
-    limit_lb = None if limit_node is None else 0
-    limit_ub = None if limit_node is None else 0
-    limit_vel    = None if limit_node is None else float(limit_node.attrib['velocity'])
-    limit_effort = None if limit_node is None else float(limit_node.attrib['effort'])
+    limit_lb = None if limit_node is None or type == 'fixed' else 0
+    limit_ub = None if limit_node is None or type == 'fixed'else 0
+    limit_vel    = None if limit_node is None or type == 'fixed' else float(limit_node.attrib['velocity'])
+    limit_effort = None if limit_node is None or type == 'fixed' else float(limit_node.attrib['effort'])
 
-    if limit_node is not None and 'lower' in limit_node.attrib:
+    if limit_node is not None and type != 'fixed' and 'lower' in limit_node.attrib:
         limit_lb = float(limit_node.attrib['lower'])
         limit_ub = float(limit_node.attrib['upper'])
     
@@ -205,7 +205,7 @@ def _parse_joint_node(model : Model, joint_node : ET.Element, name_prefix : Path
         if mimic_node is not None:
             m = 1.0 if 'multiplier' not in mimic_node.attrib else float(mimic_node.attrib['multiplier'])
             b = 0.0 if 'offset' not in mimic_node.attrib else float(mimic_node.attrib['offset'])
-            position = model.get_edge(name_prefix / mimic_node.attrib['joint']) * m + b
+            position = model.get_edge(name_prefix / mimic_node.attrib['joint']).position * m + b
         else:
             position = gm.Position(name_prefix / joint_node.attrib['name'])
     else:
@@ -253,8 +253,6 @@ def load_urdf(model : Model, urdf : str, name=None, use_visual_as_collision=True
         joint_queue.put(j)
 
     # Primitive way of handling joints' mimic dependencies
-    created_joints = set()
-
     joints = {}
 
     while not joint_queue.empty():
@@ -266,7 +264,7 @@ def load_urdf(model : Model, urdf : str, name=None, use_visual_as_collision=True
             raise RuntimeError(f'Multiple mimics in joint node {j["name"]}')
         elif len(mimics) == 1:
             # If joint has not been instantiated, re-queue this one
-            if mimics[0]['joint'] not in created_joints:
+            if mimics[0].attrib['joint'] not in joints:
                 joint_queue.put(j)
                 continue
 
