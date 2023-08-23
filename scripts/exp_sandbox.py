@@ -5,6 +5,12 @@ if __name__ == '__main__':
 
     q = gm.KVSymbol('q')
 
-    t_trans = ke.twist_to_se3(q, gm.vector3(1, 0, 0), gm.zeros(3))
+    vee = gm.vector3(0, 1, 0)
+    omega = gm.zeros(3)
+
+    t_trans = ke.twist_to_se3_special(q, vee, omega)
 
     print(t_trans)
+    print(t_trans.eval({q: 0}))
+    print(t_trans.eval({q: 1}))
+    print(t_trans.eval({q: 2}))

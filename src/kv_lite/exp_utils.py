@@ -2,7 +2,22 @@ from typing import Tuple
 
 from . import spatial as gm
 from .model import ConstrainedEdge
+import numpy as np
 
+def twist_to_se3_special(q, v, w, epsilon=1e-6) -> gm.KVArray:
+    """Generate a SE(3) transform from a twist in exponential coordinates.
+        Check for prismatic special case and treat differently
+        q: position
+        v: linear part of the twist
+        w: angular part of the twist 
+    """
+    if w.ndim < 2:
+        w = w.reshape((len(w), 1))
+
+    if np.linalg.norm(w) < epsilon:
+        return gm.Transform.from_xyz(*(v[:3].flatten() * q))
+
+    return twist_to_se3(q, v, w, epsilon=1e-6)
 
 def twist_to_se3(q, v, w, epsilon=1e-6) -> gm.KVArray:
     """Generate a SE(3) transform from a twist in exponential coordinates.
