@@ -122,6 +122,9 @@ class KVExpr():
         self._function = None
         return self
 
+    def __itruediv__(self, other):
+        return self.__idiv__(other)
+
     def __idiv__(self, other):
         self._ca_data /= other
         self._symbols  = None
@@ -152,11 +155,14 @@ class KVExpr():
             return other * self
         return KVExpr(self._ca_data * other)
 
+    def __truediv__(self, other):
+        return self.__div__(other)
+
     def __div__(self, other):
         if isinstance(other, KVExpr):
             return KVExpr(self._ca_data / other._ca_data)
         elif isinstance(other, np.ndarray):
-            return other.__rsub__(self)
+            return other.__rdiv__(self)
         return KVExpr(self._ca_data / other)
 
     def __radd__(self, other):
@@ -173,6 +179,9 @@ class KVExpr():
         if isinstance(other, KVExpr):
             return KVExpr(self._ca_data * other._ca_data)
         return KVExpr(self._ca_data * other)
+
+    def __rtruediv__(self, other):
+        return self.__div__(other)
 
     def __rdiv__(self, other):
         if isinstance(other, KVExpr):
@@ -450,22 +459,22 @@ class KVArray(np.ndarray):
             return super().__mul__(np.asarray([other]))
         return super().__mul__(other)
 
-    def __div__(self, other):
+    def __truediv__(self, other):
         if isinstance(other, KVExpr):
-            return super().__div__(np.asarray([other]))
-        return super().__div__(other)
+            return super().__truediv__(np.asarray([other]))
+        return super().__truediv__(other)
 
     def __radd__(self, other):
         return self + other
 
     def __rsub__(self, other):
-        return self - other
+        return KVArray([other]) - self
 
     def __rmul__(self, other):
         return self * other
 
-    def __rdiv__(self, other):
-        return self / other
+    def __rtruediv__(self, other):
+        return KVArray([other]) / self
 
     def __pow__(self, other):
         if isinstance(other, KVExpr):
