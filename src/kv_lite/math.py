@@ -3,7 +3,6 @@ import numpy  as np
 
 from math      import prod
 
-
 def _Matrix(data):
     try:
         return ca.SX(data)
@@ -86,14 +85,16 @@ class KVExpr():
             return expr
 
         out = super().__new__(cls)
-        out._symbols = None
+        out._symbols   = None
+        out._o_symbols = None
         # Compiled function for evaluation
-        out._function = None
+        out._function  = None
 
         # Straight copy
         if isinstance(expr, KVExpr):
-            out._ca_data = expr._ca_data
-            out._symbols = expr._symbols
+            out._ca_data   = expr._ca_data
+            out._symbols   = expr._symbols
+            out._o_symbols = expr._o_symbols
         else: # New element
             out._ca_data = expr
         return out
@@ -221,6 +222,12 @@ class KVExpr():
                 self._symbols = frozenset()
         return self._symbols
 
+    @property
+    def ordered_symbols(self):
+        if self._o_symbols is None:
+            self._o_symbols = tuple(self.symbols)
+        return self._o_symbols
+
     def jacobian(self, symbols):
         jac = ca.jacobian(self._ca_data, _Matrix([s._ca_data for s in symbols]))
         np_jac = KVArray(np.array([KVExpr(e) for e in jac.elements()]).reshape(jac.shape))
@@ -239,12 +246,12 @@ class KVExpr():
 
     def eval(self, args : dict = {}):
         if self._function is None:
-            self._function = _speed_up(self._ca_data, list(self.symbols), (1,))
+            self._function = _speed_up(self._ca_data, self.ordered_symbols, (1,))
         return float(self._function(args))
 
     def unchecked_eval(self, args):
         if self._function is None:
-            self._function = _speed_up(self._ca_data, list(self.symbols), (1,))
+            self._function = _speed_up(self._ca_data, self.ordered_symbols, (1,))
         return float(self._function.call_unchecked(args))
 
 
@@ -399,8 +406,9 @@ class KVArray(np.ndarray):
         # We first cast to be our class type
         obj = np.asarray(input_array).view(cls)
         # add the new attribute to the created instance
-        obj._symbols  = None
-        obj._function = None
+        obj._symbols   = None
+        obj._o_symbols = None
+        obj._function  = None
         # Finally, we must return the newly created object:
         return obj
 
@@ -408,8 +416,9 @@ class KVArray(np.ndarray):
         # see InfoArray.__array_finalize__ for comments
         if obj is None:
             return
-        self._symbols  = None
-        self._function = None
+        self._symbols   = None
+        self._o_symbols = None
+        self._function  = None
 
     @property
     def is_zero(self):
@@ -424,6 +433,12 @@ class KVArray(np.ndarray):
         if self._symbols is None:
             self._symbols = frozenset(_get_symbols(self))
         return self._symbols
+
+    @property
+    def ordered_symbols(self):
+        if self._o_symbols is None:
+            self._o_symbols = tuple(self.symbols)
+        return self._o_symbols
 
     @property
     def is_symbolic(self):

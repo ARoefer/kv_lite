@@ -87,7 +87,7 @@ if __name__ == '__main__':
     print(d3.eval({x: 1, y: 2, z: 3}))
 
     km = kv.Model()
-    with open(res_pkg_path('/home/adrian/eva_ws/src/eva_core/eva_core_description/urdf/eva_core.urdf'), 'r') as f:
+    with open(res_pkg_path('/home/russell/git/iiwa_grasping/urdf/yang_grasping.urdf'), 'r') as f:
         windmill = kv.urdf.load_urdf(km, f.read())
 
     km.add_edge(kv.TransformEdge('world', windmill.root, gm.Transform.from_xyz(0.1, 0, 0)))
@@ -98,7 +98,7 @@ if __name__ == '__main__':
     for jn in windmill.joints:
         print(f'Joint: {jn}')
 
-    world_T_r_arm_5 = windmill.get_fk('RARM_JOINT5_Link')
+    world_T_r_arm_5 = windmill.get_fk('iiwa_link_4')
     print(world_T_r_arm_5)
     joint_symbols = world_T_r_arm_5.transform.symbols
     for j in joint_symbols:
