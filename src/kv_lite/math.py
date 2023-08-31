@@ -472,8 +472,8 @@ class KVArray(np.ndarray):
 
         if self._function is None:
             flat_f = [e._ca_data if isinstance(e, KVExpr) else e for e in self.flatten()]
-            self._function = _speed_up(_Matrix(flat_f), list(self.symbols), self.shape)
-        return self._function(args)
+            self._function = _speed_up(_Matrix(flat_f), self.ordered_symbols, self.shape)
+        return self._function(args).copy()
 
     def unchecked_eval(self, args):
         if self.dtype != object:
@@ -481,8 +481,8 @@ class KVArray(np.ndarray):
 
         if self._function is None:
             flat_f = [e._ca_data if isinstance(e, KVExpr) else e for e in self.flatten()]
-            self._function = _speed_up(_Matrix(flat_f), list(self.symbols), self.shape)
-        return self._function.call_unchecked(args)
+            self._function = _speed_up(_Matrix(flat_f), self.ordered_symbols, self.shape)
+        return self._function.call_unchecked(args).copy()
 
     def jacobian(self, symbols):
         """Invokes jacobian() on all elements"""
