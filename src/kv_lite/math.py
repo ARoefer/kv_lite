@@ -3,7 +3,6 @@ import numpy  as np
 
 from math      import prod
 
-
 def _Matrix(data):
     try:
         return ca.SX(data)
@@ -86,14 +85,16 @@ class KVExpr():
             return expr
 
         out = super().__new__(cls)
-        out._symbols = None
+        out._symbols   = None
+        out._o_symbols = None
         # Compiled function for evaluation
-        out._function = None
+        out._function  = None
 
         # Straight copy
         if isinstance(expr, KVExpr):
-            out._ca_data = expr._ca_data
-            out._symbols = expr._symbols
+            out._ca_data   = expr._ca_data
+            out._symbols   = expr._symbols
+            out._o_symbols = expr._o_symbols
         else: # New element
             out._ca_data = expr
         return out
@@ -120,6 +121,9 @@ class KVExpr():
         self._symbols  = None
         self._function = None
         return self
+
+    def __itruediv__(self, other):
+        return self.__idiv__(other)
 
     def __idiv__(self, other):
         self._ca_data /= other
@@ -151,6 +155,9 @@ class KVExpr():
             return other * self
         return KVExpr(self._ca_data * other)
 
+    def __truediv__(self, other):
+        return self.__div__(other)
+
     def __div__(self, other):
         if isinstance(other, KVExpr):
             return KVExpr(self._ca_data / other._ca_data)
@@ -172,6 +179,9 @@ class KVExpr():
         if isinstance(other, KVExpr):
             return KVExpr(self._ca_data * other._ca_data)
         return KVExpr(self._ca_data * other)
+
+    def __rtruediv__(self, other):
+        return self.__div__(other)
 
     def __rdiv__(self, other):
         if isinstance(other, KVExpr):
@@ -212,6 +222,12 @@ class KVExpr():
                 self._symbols = frozenset()
         return self._symbols
 
+    @property
+    def ordered_symbols(self):
+        if self._o_symbols is None:
+            self._o_symbols = tuple(self.symbols)
+        return self._o_symbols
+
     def jacobian(self, symbols):
         jac = ca.jacobian(self._ca_data, _Matrix([s._ca_data for s in symbols]))
         np_jac = KVArray(np.array([KVExpr(e) for e in jac.elements()]).reshape(jac.shape))
@@ -230,12 +246,12 @@ class KVExpr():
 
     def eval(self, args : dict = {}):
         if self._function is None:
-            self._function = _speed_up(self._ca_data, list(self.symbols), (1,))
+            self._function = _speed_up(self._ca_data, self.ordered_symbols, (1,))
         return float(self._function(args))
 
     def unchecked_eval(self, args):
         if self._function is None:
-            self._function = _speed_up(self._ca_data, list(self.symbols), (1,))
+            self._function = _speed_up(self._ca_data, self.ordered_symbols, (1,))
         return float(self._function.call_unchecked(args))
 
 
@@ -390,8 +406,9 @@ class KVArray(np.ndarray):
         # We first cast to be our class type
         obj = np.asarray(input_array).view(cls)
         # add the new attribute to the created instance
-        obj._symbols  = None
-        obj._function = None
+        obj._symbols   = None
+        obj._o_symbols = None
+        obj._function  = None
         # Finally, we must return the newly created object:
         return obj
 
@@ -399,8 +416,9 @@ class KVArray(np.ndarray):
         # see InfoArray.__array_finalize__ for comments
         if obj is None:
             return
-        self._symbols  = None
-        self._function = None
+        self._symbols   = None
+        self._o_symbols = None
+        self._function  = None
 
     @property
     def is_zero(self):
@@ -415,6 +433,12 @@ class KVArray(np.ndarray):
         if self._symbols is None:
             self._symbols = frozenset(_get_symbols(self))
         return self._symbols
+
+    @property
+    def ordered_symbols(self):
+        if self._o_symbols is None:
+            self._o_symbols = tuple(self.symbols)
+        return self._o_symbols
 
     @property
     def is_symbolic(self):
@@ -435,22 +459,22 @@ class KVArray(np.ndarray):
             return super().__mul__(np.asarray([other]))
         return super().__mul__(other)
 
-    def __div__(self, other):
+    def __truediv__(self, other):
         if isinstance(other, KVExpr):
-            return super().__div__(np.asarray([other]))
-        return super().__div__(other)
+            return super().__truediv__(np.asarray([other]))
+        return super().__truediv__(other)
 
     def __radd__(self, other):
         return self + other
 
     def __rsub__(self, other):
-        return self - other
+        return KVArray([other]) - self
 
     def __rmul__(self, other):
         return self * other
 
-    def __rdiv__(self, other):
-        return self / other
+    def __rtruediv__(self, other):
+        return KVArray([other]) / self
 
     def __pow__(self, other):
         if isinstance(other, KVExpr):
@@ -463,8 +487,8 @@ class KVArray(np.ndarray):
 
         if self._function is None:
             flat_f = [e._ca_data if isinstance(e, KVExpr) else e for e in self.flatten()]
-            self._function = _speed_up(_Matrix(flat_f), list(self.symbols), self.shape)
-        return self._function(args)
+            self._function = _speed_up(_Matrix(flat_f), self.ordered_symbols, self.shape)
+        return self._function(args).copy()
 
     def unchecked_eval(self, args):
         if self.dtype != object:
@@ -472,8 +496,8 @@ class KVArray(np.ndarray):
 
         if self._function is None:
             flat_f = [e._ca_data if isinstance(e, KVExpr) else e for e in self.flatten()]
-            self._function = _speed_up(_Matrix(flat_f), list(self.symbols), self.shape)
-        return self._function.call_unchecked(args)
+            self._function = _speed_up(_Matrix(flat_f), self.ordered_symbols, self.shape)
+        return self._function.call_unchecked(args).copy()
 
     def jacobian(self, symbols):
         """Invokes jacobian() on all elements"""
