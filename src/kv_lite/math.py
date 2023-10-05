@@ -534,7 +534,7 @@ def min(a, b):
     if isinstance(b, KVExpr):
         a = a if isinstance(a, KVExpr) else KVExpr(ca.SX(b))
         return KVExpr(ca.mmin(_Matrix([a, b._ca_data])))
-    return np.min(a, b)
+    return np.min((a, b))
 
 def max(a, b):
     if isinstance(a, KVExpr):
@@ -542,7 +542,7 @@ def max(a, b):
     if isinstance(b, KVExpr):
         a = a if isinstance(a, KVExpr) else KVExpr(ca.SX(b))
         return KVExpr(ca.mmax(_Matrix([a, b._ca_data])))
-    return np.max(a, b)
+    return np.max((a, b))
 
 sqrt = wrap_array(np.vectorize(lambda v: KVExpr(ca.sqrt(v._ca_data)) if isinstance(v, KVExpr) else np.sqrt(v)))
 abs  = wrap_array(np.vectorize(lambda v: KVExpr(ca.sqrt(v._ca_data ** 2)) if isinstance(v, KVExpr) else np.abs(v)))
