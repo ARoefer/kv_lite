@@ -76,6 +76,9 @@ class Graph():
         if name not in self._nodes:
             raise KeyError(f'Unknown frame "{name}"')
         return self._nodes[name]
+    
+    def has_frame(self, name):
+        return name in self._nodes
 
     def get_fk(self, target_frame : str, source_frame : str = 'world'):
         if target_frame not in self._nodes:
