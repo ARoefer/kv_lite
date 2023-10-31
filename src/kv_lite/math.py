@@ -254,6 +254,14 @@ class KVExpr():
             self._function = _speed_up(self._ca_data, self.ordered_symbols, (1,))
         return float(self._function.call_unchecked(args))
 
+    def as_casadi(self):
+        return self._ca_data
+
+    def substitute(self, assignments : dict):
+        return type(self)(ca.substitute(self._ca_data,
+                                        KVArray(assignments.keys()).as_casadi(),
+                                        KVArray(assignments.values()).as_casadi()))
+
 
 class KVSymbol(KVExpr):
     _INSTANCES = {}
@@ -355,6 +363,12 @@ class KVSymbol(KVExpr):
     
     def unchecked_eval(self, args):
         return args[0]
+
+    def substitute(self, assignments : dict):
+        # There is only one possible substitution
+        if self in assignments:
+            return assignments[self]
+        return self
 
 
 def Position(name, prefix=None):
@@ -506,6 +520,16 @@ class KVArray(np.ndarray):
     def tangent(self, symbols=None):
         """Invokes tangent() on all elements"""
         return KVArray([e.tangent(symbols) for e in self.flatten()]).reshape(self.shape)
+
+    def as_casadi(self):
+        if len(self.shape) > 2:
+            raise RuntimeError(f'Casadi supports at most 2 dimensions. Shape of array is {self.shape}.')
+        flat_f = [e._ca_data if isinstance(e, KVExpr) else e for e in self.flatten()]
+        return _Matrix(flat_f).reshape(self.shape)
+
+    def substitute(self, assignments : dict):
+        return KVArray([e.substitute(assignments) if isinstance(e, KVExpr) else e for e in self.flatten()]).reshape(self.shape)
+
 
 def array(a):
     return KVArray(np.array(a))
