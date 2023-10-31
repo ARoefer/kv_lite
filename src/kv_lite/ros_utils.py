@@ -93,15 +93,16 @@ def real_quat_from_matrix(frame):
 
 
 class ModelTFBroadcaster(object):
-    def __init__(self, model : Model, collision_alpha=0.0):
+    def __init__(self, model : Model, collision_alpha=0.0, param='robot_description'):
         self.static_broadcaster  = tf2_ros.StaticTransformBroadcaster()
         self.dynamic_broadcaster = tf2_ros.TransformBroadcaster()
+        self._param_name         = param
         self.refresh_model(model, collision_alpha=collision_alpha)
 
     def refresh_model(self, model : Model, collision_alpha=0.0):
         urdf, self.transforms, self.tf_stack = gen_urdf(model, collision_alpha=collision_alpha)
 
-        rospy.set_param('robot_description', urdf)
+        rospy.set_param(self._param_name, urdf)
 
     def update(self, q):
         poses = self.tf_stack.eval(q)
