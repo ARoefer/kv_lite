@@ -259,8 +259,8 @@ class KVExpr():
 
     def substitute(self, assignments : dict):
         return type(self)(ca.substitute(self._ca_data,
-                                        KVArray(assignments.keys()).as_casadi(),
-                                        KVArray(assignments.values()).as_casadi()))
+                                        KVArray(list(assignments.keys())).as_casadi(),
+                                        KVArray(list(assignments.values())).as_casadi()))
 
 
 class KVSymbol(KVExpr):
