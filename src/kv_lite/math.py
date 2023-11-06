@@ -525,7 +525,8 @@ class KVArray(np.ndarray):
         if len(self.shape) > 2:
             raise RuntimeError(f'Casadi supports at most 2 dimensions. Shape of array is {self.shape}.')
         flat_f = [e._ca_data if isinstance(e, KVExpr) else e for e in self.flatten()]
-        return _Matrix(flat_f).reshape(self.shape)
+        shape  = self.shape if len(self.shape) == 2 else (1,) + self.shape
+        return _Matrix(flat_f).reshape(shape)
 
     def substitute(self, assignments : dict):
         return KVArray([e.substitute(assignments) if isinstance(e, KVExpr) else e for e in self.flatten()]).reshape(self.shape)
