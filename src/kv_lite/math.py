@@ -201,6 +201,11 @@ class KVExpr():
     def __repr__(self):
         return f'KV({self._ca_data})'
 
+    def __call__(self, args):
+        if isinstance(args, dict):
+            return self.eval(args)
+        return self.unchecked_eval(args)
+
     @property
     def is_zero(self):
         return self._ca_data.is_zero()
@@ -235,7 +240,7 @@ class KVExpr():
 
     def tangent(self, symbols=None):
         """Generalized tangent expression of this expression:
-            t(q, \dot{q}) = J(q) * \dot{dot}
+            t(q, \dot{q}) = J(q) * \dot{q}
          
            Does full tangent by default, but 'symbols' argument can
            be used to override the generation of derivatives. 
@@ -494,6 +499,11 @@ class KVArray(np.ndarray):
         if isinstance(other, KVExpr):
             return super().__pow__(np.asarray([other]))
         return super().__pow__(other)
+
+    def __call__(self, args):
+        if isinstance(args, dict):
+            return self.eval(args)
+        return self.unchecked_eval(args)
 
     def eval(self, args : dict):
         if self.dtype != object:
