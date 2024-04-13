@@ -1,7 +1,13 @@
 import casadi as ca
 import numpy  as np
 
-from math      import prod
+from math   import prod
+from typing import Iterable, \
+                   List,     \
+                   Set,      \
+                   Tuple
+                   
+
 
 def _Matrix(data):
     try:
@@ -233,6 +239,13 @@ class KVExpr():
             self._o_symbols = tuple(self.symbols)
         return self._o_symbols
 
+    def set_symbol_order(self, symbols : Iterable["KVSymbol"]):
+        if len(diff:=self.symbols.difference(set(symbols))) > 0:
+            raise ValueError(f'The symbol definition is not complete: {", ".join([str(s) for s in diff])}')
+        
+        self._o_symbols = [s for s in symbols if s in self.symbols]
+        self._function  = None  # Resetting function
+
     def jacobian(self, symbols):
         jac = ca.jacobian(self._ca_data, _Matrix([s._ca_data for s in symbols]))
         np_jac = KVArray(np.array([KVExpr(e) for e in jac.elements()]).reshape(jac.shape))
@@ -375,6 +388,12 @@ class KVSymbol(KVExpr):
             return assignments[self]
         return self
 
+    @classmethod
+    def like(cls, array : np.ndarray, prefix='x') -> "KVArray":
+        if isinstance(array, np.ndarray):
+            return KVArray([cls(f'{prefix}_{x}') for x in range(prod(array.shape))]).reshape(array.shape)
+        return prefix
+
 
 def Position(name, prefix=None):
     return KVSymbol(name, KVSymbol.TYPE_POSITION, prefix)
@@ -406,13 +425,32 @@ def _is_symbolic(nl):
         return max(*[_is_symbolic(e) for e in nl])
     return isinstance(nl, KVSymbol)
 
+
 def _get_symbols(nl):
     if isinstance(nl, KVArray):
+        if len(nl.shape) == 0:
+            return nl.item().symbols 
+
         out = set()
         for e in nl:
             out.update(_get_symbols(e))
         return out
     return nl.symbols if isinstance(nl, KVExpr) else set()
+
+
+def _get_symbols_in_order(nl) -> Tuple[List[KVSymbol], Set[KVSymbol]]:
+    if isinstance(nl, KVArray):
+        ordered_symbols = []
+        found_symbols   = set()
+
+        for e in nl.flatten():
+            if isinstance(e, KVExpr):
+                for s in e.ordered_symbols:
+                    if s not in found_symbols:
+                        found_symbols.add(s)
+                        ordered_symbols.append(s)
+        return ordered_symbols, found_symbols
+    return (nl.ordered_symbols, nl.symbols) if isinstance(nl, KVExpr) else ([], set())
 
 
 _vec_is_zero = np.vectorize(lambda v: v.is_zero if isinstance(v, KVExpr) else v == 0)
@@ -440,28 +478,35 @@ class KVArray(np.ndarray):
         self._function  = None
 
     @property
-    def is_zero(self):
+    def is_zero(self) -> bool:
         return _vec_is_zero(self).min()
 
     @property
-    def is_one(self):
+    def is_one(self) -> bool:
         return _vec_is_one(self).min()
 
     @property
-    def symbols(self):
+    def symbols(self) -> Set[KVSymbol]:
         if self._symbols is None:
-            self._symbols = frozenset(_get_symbols(self))
+            self.ordered_symbols  # Invokes collection of symbols
         return self._symbols
 
     @property
-    def ordered_symbols(self):
+    def ordered_symbols(self) -> List[KVSymbol]:
         if self._o_symbols is None:
-            self._o_symbols = tuple(self.symbols)
+            self._o_symbols, self._symbols = _get_symbols_in_order(self)
         return self._o_symbols
 
     @property
-    def is_symbolic(self):
+    def is_symbolic(self) -> bool:
         return len(self.symbols) > 0
+
+    def set_symbol_order(self, symbols : Iterable[KVSymbol]):
+        if len(diff:=self.symbols.difference(set(symbols))) > 0:
+            raise ValueError(f'The symbol definition is not complete: {", ".join([str(s) for s in diff])}')
+        
+        self._o_symbols = [s for s in symbols if s in self.symbols]
+        self._function  = None  # Resetting function
 
     def __add__(self, other):
         if isinstance(other, KVExpr):
@@ -535,7 +580,12 @@ class KVArray(np.ndarray):
         if len(self.shape) > 2:
             raise RuntimeError(f'Casadi supports at most 2 dimensions. Shape of array is {self.shape}.')
         flat_f = [e._ca_data if isinstance(e, KVExpr) else e for e in self.flatten()]
-        shape  = self.shape if len(self.shape) == 2 else (1,) + self.shape
+        if len(self.shape) == 0:
+            shape = (1,1)
+        elif len(self.shape) < 2:
+            shape = (1,) + self.shape
+        else:
+            shape = self.shape
         return _Matrix(flat_f).reshape(shape)
 
     def substitute(self, assignments : dict):
