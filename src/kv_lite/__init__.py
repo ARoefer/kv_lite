@@ -8,6 +8,9 @@ except ModuleNotFoundError:
     print('No ROS found. ROS functions not loaded.')
 
 from .spatial import *
+from .lie     import SE3, \
+                     SO3
+
 from .graph import FKChainException, \
                    Frame,            \
                    FrameView

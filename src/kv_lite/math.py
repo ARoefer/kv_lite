@@ -622,6 +622,7 @@ def vstack(tup):
 def stack(arrays, axis):
     return KVArray(np.stack(arrays, axis))
 
+trace = np.trace
 
 def wrap_array(f):
     def g(v):

@@ -36,6 +36,7 @@ from .math import KVExpr, \
                   ones,  \
                   zeros, \
                   tri, \
+                  trace, \
                   vstack, \
                   hstack, \
                   stack, \
