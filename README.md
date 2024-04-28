@@ -41,23 +41,23 @@ Before going to full models of articulated structures, we need to take a look at
 
  - Symbols: The variables of expressions. Implemented as `KVSymbol`.
  - Expressions: Some mathematical expression. Implemented as `KVExpr`.
- - Matrices: A structured arrangement of expressions. Implemented as `KVArray` on top of `numpy`'s arrays.
+ - Matrices: A structured arrangement of expressions. Implemented as `KVArray` as a specialization of `numpy`'s arrays.
  - Constraints: Triples of an expressions `lb, ub, e` which expresses the constraint `lb <= e <= ub`. Implemented simply as `Constraint`.
 
 Let us look at an example of using these:
 
 ```python
-from kv_lite import gm  # GM -> Gradient math (legacy term)
+import kv_lite as kv
 
 # Creating our first symbol
-a = gm.KVsymbol('a')
+a = kv.symbol('a')
 
 # We can use a normally to build up symbolic expressions
 e1 = a * 4
 print(e1)  # >> (4*a)
 
 # We have to use the symbolic functions from gm
-e2 = gm.cos(e1)
+e2 = kv.cos(e1)
 print(e2)  # >> cos((4*a))
 
 # We can inspect our expressions
@@ -65,7 +65,7 @@ print(e2.is_symbolic)  # >> True
 print(e2.symbols)      # >> frozenset({KV(a)})
 
 # Constant expressions also exist
-e_constant = gm.KVExpr(4) * gm.KVExpr(5)
+e_constant = kv.expr(4) * kv.expr(5)
 print(e_constant)              # >> KV(20)
 print(e_constant.is_symbolic)  # >> False
 print(e_constant.symbols)      # >> frozenset()
@@ -81,7 +81,7 @@ print(e_constant.eval()) # >> 20.0
 #  1. All expressions always evaluate to float
 #  2. eval() only filters for expected variables:
 
-print(e1.eval({a: 3, gm.KVSymbol('b'): 2}))  # >> 12.0
+print(e1.eval({a: 3, kv.Symbol('b'): 2}))  # >> 12.0
 
 # We can easily generate the jacobian of an expression
 print(e1.jacobian([a]))  # >> [[KV(4)]]
@@ -91,14 +91,14 @@ print(e2.jacobian([a]))  # >> [[KV(@1=4, (-(@1*sin((@1*a)))))]]
 In the last stages of the code above, we generate instances of `KVArray`. As stated before, this is the array implementation of KV-lite. It is a small extension of `numpy`'s `ndarray` type and thus supports all typical numpy array operations, such as indexing, slicing, stacking, and whatever else. All functions provided in KV-lite are vectorized, meaning that they broadcast across arrays. *Careful*: When given a container, KV-lite operations will **always** return a `KVArray`. Let us look at a couple of examples of using `KVArray`:
 
 ```python
-from kv_lite import gm
+import kv_lite as kv
 
 # Let's create a couple more symbols for ourselves
-a, b, c, d = [gm.KVSymbol(x) for x in 'abcd']
+a, b, c, d = [kv.Symbol(x) for x in 'abcd']
 
 # CAREFUL: The left-hand side determines the array type, thus we create a KVArray here
-m = gm.diag([1, 2, 3]) # Equivalent to gm.KVArray(np.diag([1, 2, 3]))
-v = gm.KVArray([a, b, c]).reshape((3, 1))
+m = kv.diag([1, 2, 3]) # Equivalent to kv.array(np.diag([1, 2, 3]))
+v = kv.array([a, b, c]).reshape((3, 1))
 
 r = m.dot(v)  # @ operator would work too
 print(r) 
@@ -142,10 +142,10 @@ Creating arbitrary matrices is fine and dandy, but also offers a growing set of 
 
 ```python
 import numpy as np
-from kv_lite import gm
+import kv_lite as kv
 
 # Create a homogeneous vector -> Not affected by translation
-v = gm.vector3(1, 2, 3)
+v = kv.vector3(1, 2, 3)
 print(v)
 # [[1]
 #  [2]
@@ -153,10 +153,10 @@ print(v)
 #  [0]]
 
 # L2 norm of a vector
-print(gm.norm(v))  # >> 3.74165738...
+print(kv.norm(v))  # >> 3.74165738...
 
 # Create a homogeneous point -> Affected by translation and rotation
-p = gm.point3(1, 2, 3)
+p = kv.point3(1, 2, 3)
 print(p)
 # [[1]
 #  [2]
@@ -164,41 +164,41 @@ print(p)
 #  [1]]
 
 # Create an identity transform
-identity = gm.Transform.identity()
+identity = kv.Transform.identity()
 
 # A pure linear translation along the x axis by two meters
-trans1 = gm.Transform.from_xyz(2, 0, 0)
+trans1 = kv.Transform.from_xyz(2, 0, 0)
 
 # A 90 degree rotation around the Y-axis
-rot1   = gm.Transform.from_euler(0, 0, np.deg2rad(90))
+rot1   = kv.Transform.from_euler(0, 0, np.deg2rad(90))
 
 # A 45 degree rotation around v
-rot2   = gm.Transform.from_axis_angle(v / gm.norm(v), np.deg2rad(45))
+rot2   = kv.Transform.from_axis_angle(v / kv.norm(v), np.deg2rad(45))
 
 # An identity rotation from a quaternion
-rot3   = gm.Transform.from_quat(0, 0, 0, 1)
+rot3   = kv.Transform.from_quat(0, 0, 0, 1)
 
 # A combined rotation and translation
 # The same exists for from_xyz_aa, from_xyz_quat
-tf1    = gm.Transform.from_xyz_euler(2, 0, 0, 0, 0, np.deg2rad(90))
+tf1    = kv.Transform.from_xyz_euler(2, 0, 0, 0, 0, np.deg2rad(90))
 
 # Use Transform.inverse to invert homogeneous transformations
-tf1_inv = gm.Transform.inverse(tf1)
+tf1_inv = kv.Transform.inverse(tf1)
 
-# gm.Transform also provides some structured introspection into transforms
-rot4   = gm.Transform.rot(tf1_inv)   # Generate a pure rotation transform from tf1_inv
-trans2 = gm.Transform.trans(tf1_inv) # Generate a pure translation transform from tf1_inv
+# kv.Transform also provides some structured introspection into transforms
+rot4   = kv.Transform.rot(tf1_inv)   # Generate a pure rotation transform from tf1_inv
+trans2 = kv.Transform.trans(tf1_inv) # Generate a pure translation transform from tf1_inv
 
-tf1_inv_x = gm.Transform.x(tf1_inv)  # X-column of transform
-tf1_inv_y = gm.Transform.y(tf1_inv)  # Y-column of transform
-tf1_inv_z = gm.Transform.z(tf1_inv)  # Z-column of transform
-tf1_inv_w = gm.Transform.w(tf1_inv)  # W-column of transform - identical to gm.Transform.pos(tf1_inv)
+tf1_inv_x = kv.Transform.x(tf1_inv)  # X-column of transform
+tf1_inv_y = kv.Transform.y(tf1_inv)  # Y-column of transform
+tf1_inv_z = kv.Transform.z(tf1_inv)  # Z-column of transform
+tf1_inv_w = kv.Transform.w(tf1_inv)  # W-column of transform - identical to kv.Transform.pos(tf1_inv)
 
 # Of course, transform creation also works with symbols!
-a, b = [gm.KVSymbol(x) for x in 'ab']
+a, b = [kv.Symbol(x) for x in 'ab']
 
 # A transform translating by 2a along X and rotating by b around Z
-tf2  = gm.Transform.from_xyz_euler(2*a, 0, 0, 0, b, 0)
+tf2  = kv.Transform.from_xyz_euler(2*a, 0, 0, 0, b, 0)
 print(tf2)
 # [[KV(cos(b)) KV(0) KV(sin(b)) KV((2*a))]
 #  [KV(0) KV(1) KV(0) KV(0)]
@@ -215,10 +215,10 @@ So far, we have always created all symbols using `KVSymbol`. This is fine for a 
 Let's make this topic a bit more approachable:
 
 ```python
-from kv_lite import gm
+import kv_lite as kv
 
 # We create a few symbols modelling the position of degrees of freedom a, b, c
-a, b, c = [gm.Position(x) for x in 'abc']
+a, b, c = [kv.Position(x) for x in 'abc']
 print(a, b, c)  # >> a__position b__position c__position
 
 # We can generate the symbols referencing the derivative and the integral of a typed symbol
@@ -243,7 +243,7 @@ print(e1.tangent())  # >> ((4*a__velocity)-b__velocity)
 print(a.tangent())  # >> a__velocity
 ```
 
-Analogously to `gm.Position`, there are also `gm.Velocity`, `gm.Acceleration`, `gm.Jerk`, and `gm.Snap`.
+Analogously to `kv.Position`, there are also `kv.Velocity`, `kv.Acceleration`, `kv.Jerk`, and `kv.Snap`.
 
 ### Models
 
@@ -255,8 +255,6 @@ Enough theory, let us look at a few examples:
 ```python
 import kv_lite as kv
 import numpy   as np
-
-from kv_lite import gm
 
 # km -> kinematic model
 km = kv.Model()
@@ -296,10 +294,10 @@ except kv.FKChainException as e: # When no path is found, an exception is raised
     print(e)
 
 # Let us create some symbols for different degrees of freedom
-a, b, c = [gm.Position(x) for x in 'abc']
+a, b, c = [kv.Position(x) for x in 'abc']
 
 # Adding an edge connecting "lol" to "world" with a simple translation along X
-km.add_edge(kv.TransformEdge('world', 'lol', gm.Transform.from_xyz(a + 1, 0, 0)))
+km.add_edge(kv.TransformEdge('world', 'lol', kv.Transform.from_xyz(a + 1, 0, 0)))
 
 # Now we can look up the forward kinematic of "lol" to "world"
 lol_T_w = km.get_fk('lol')
@@ -323,7 +321,7 @@ km.add_frame(kv.Frame('foo'))
 
 # Add an edge connecting "foo" to "lol", rotating it around lol's Y axis at a distance of 1 meter
 # Constraints need some name to identify them uniquely
-km.add_edge(kv.ConstrainedTransformEdge('lol', 'foo', gm.Transform.from_euler(0, b, 0).dot(gm.Transform.from_xyz(0, 0, 1)),
+km.add_edge(kv.ConstrainedTransformEdge('lol', 'foo', kv.Transform.from_euler(0, b, 0).dot(kv.Transform.from_xyz(0, 0, 1)),
                                         {'limit position b': kv.Constraint(np.deg2rad(-45), np.deg2rad(-45), b)}))
 
 # Getting the FK of "foo" in "world"
@@ -348,7 +346,6 @@ Manual model building is good to understand, but typically you will already have
 import kv_lite      as kv
 import prime_bullet as pb
 
-from kv_lite import gm
 from pathlib import Path
 
 # Create an empty model
@@ -375,7 +372,7 @@ except kv.FKChainException as e:          # There is no connection between "wind
     print(e)
 
 # Add a static transform between the base of the windmill and "world"
-km.add_edge(kv.TransformEdge('world', windmill.root, gm.Transform.from_xyz(1, 0, 0)))
+km.add_edge(kv.TransformEdge('world', windmill.root, kv.Transform.from_xyz(1, 0, 0)))
 
 # Now the lookup works
 wings_T_w = windmill.get_fk('wings')
@@ -383,16 +380,15 @@ wings_T_w = windmill.get_fk('wings')
 
 ### Exponential Coordinates
 
-The current version of KV-lite includes an implementation of exponential map transformations. This is just a brief overview of the existing functionality:
+The current version of KV-lite includes an implementation of SO3/SE3 exponential maps transformations. This is just a brief overview of the existing functionality:
 
 ```python
 import kv_lite as kv
-from kv_lite import gm
 
 # Generate an exponential map transform
-tf = kv.exp.twist_to_se3(gm.vector3(1, 0, 0), 
-                         gm.vector3(0, 0, 1),
-                         gm.Position('q'))
+tf = kv.exp.twist_to_se3(kv.vector3(1, 0, 0), 
+                         kv.vector3(0, 0, 1),
+                         kv.Position('q'))
 
 print(tf)
 
@@ -401,10 +397,8 @@ km = kv.Model()
 km.add_frame('foo')
 
 # We can also use the transform as an edge
-km.add_edge(kv.exp.TwistJointEdge(gm.vector3(1, 0, 0),
-                                  gm.vector3(0, 0, 1),
-                                  gm.Position('q')))
+km.add_edge(kv.exp.TwistJointEdge(kv.vector3(1, 0, 0),
+                                  kv.vector3(0, 0, 1),
+                                  kv.Position('q')))
 
 ```
-
-*Note:* Implementation is probably buggy.

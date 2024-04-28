@@ -3,6 +3,7 @@ import numpy as np
 from .math import KVExpr, \
                   KVSymbol, \
                   KVArray, \
+                  Symbol,  \
                   Position, \
                   Velocity, \
                   Acceleration, \
@@ -29,6 +30,7 @@ from .math import KVExpr, \
                   tanh,  \
                   atanh,  \
                   arctanh,  \
+                  expr,    \
                   array,  \
                   asarray, \
                   diag,   \

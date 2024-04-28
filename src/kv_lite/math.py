@@ -395,6 +395,9 @@ class KVSymbol(KVExpr):
         return prefix
 
 
+def Symbol(name, prefix=None):
+    return KVSymbol(name, KVSymbol.TYPE_UNKNOWN, prefix)
+
 def Position(name, prefix=None):
     return KVSymbol(name, KVSymbol.TYPE_POSITION, prefix)
 
@@ -591,6 +594,8 @@ class KVArray(np.ndarray):
     def substitute(self, assignments : dict):
         return KVArray([e.substitute(assignments) if isinstance(e, KVExpr) else e for e in self.flatten()]).reshape(self.shape)
 
+def expr(e):
+    return KVExpr(e)
 
 def array(a):
     return KVArray(np.array(a))
