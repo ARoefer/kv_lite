@@ -7,6 +7,7 @@ try:
 except ModuleNotFoundError:
     print('No ROS found. ROS functions not loaded.')
 
+from .spatial import *
 from .graph import FKChainException, \
                    Frame,            \
                    FrameView
