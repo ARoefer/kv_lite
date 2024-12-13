@@ -59,7 +59,11 @@ class URDFObject():
         self._links  = links
         self._joints = joints
         self._root   = root
-    
+
+    @property
+    def model(self) -> Model:
+        return self._model
+
     @property
     def root(self):
         return self._links[self._root]
