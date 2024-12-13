@@ -60,7 +60,7 @@ class Model(Graph):
         self._constraints = {}
         self._symbol_constraint_map = {}
 
-    def add_edge(self, edge: DirectedEdge, name=None):
+    def add_edge(self, edge: DirectedEdge, name : str=None):
         out = super().add_edge(edge, name)
 
         if isinstance(edge, ConstrainedEdge):
@@ -79,7 +79,7 @@ class Model(Graph):
 
         return out
 
-    def add_constraint(self, name, constraint):
+    def add_constraint(self, name : str, constraint : Constraint):
         if name in self._constraints:
             self.remove_constraint(name)
         
@@ -91,7 +91,7 @@ class Model(Graph):
         
         self._constraints[name] = constraint
 
-    def remove_constraint(self, name):
+    def remove_constraint(self, name : str):
         if name not in self._constraints:
             raise KeyError(f'Unknown constraint {name}')
         
@@ -100,7 +100,7 @@ class Model(Graph):
         
         del self._constraints[name]
 
-    def get_constraints(self, symbols : Iterable):
+    def get_constraints(self, symbols : Iterable[gm.Symbol]):
         out = {}
         for s in symbols:
             if s in self._symbol_constraint_map:

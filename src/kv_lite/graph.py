@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing      import Any, \
                         Iterable, \
+                        List, \
                         Union
 
 from . import spatial as gm
@@ -28,15 +29,15 @@ class FrameView():
         self.transform = transform
     
     @property
-    def name(self):
+    def name(self) -> str:
         return self._frame.name
     
     @property
-    def frame(self):
+    def frame(self) -> Frame:
         return self._frame
     
     @property
-    def dtype(self):
+    def dtype(self) -> type:
         return type(self._frame)
 
     def __str__(self):
@@ -69,15 +70,15 @@ class Graph():
         
         del self._nodes[name]
 
-    def get_frames(self):
+    def get_frames(self) -> List[str]:
         return list(self._nodes.keys())
 
-    def get_frame(self, name):
+    def get_frame(self, name : str) -> Frame:
         if name not in self._nodes:
             raise KeyError(f'Unknown frame "{name}"')
         return self._nodes[name]
     
-    def has_frame(self, name):
+    def has_frame(self, name : str) -> bool:
         return name in self._nodes
 
     def get_fk(self, target_frame : str, source_frame : str = 'world'):
@@ -138,7 +139,7 @@ class Graph():
         
         raise FKChainException(f'Cannot look up {source_frame} T {target_frame}: The frames have different roots {p_target[-1].parent} and {p_source[-1].parent}')
     
-    def add_edge(self, edge : DirectedEdge, name=None):
+    def add_edge(self, edge : DirectedEdge, name : str=None):
         if edge.parent not in self._nodes:
             raise KeyError(f'Cannot insert edge as {edge.parent} is not a node in the graph')
 
@@ -183,15 +184,15 @@ class Graph():
 
         del self._incoming_edges[child]
 
-    def get_edge(self, name):
+    def get_edge(self, name : str) -> DirectedEdge:
         if name not in self._named_edges:
             raise KeyError(f'Edge "{name}" is not in graph.')
         return self._named_edges[name]
 
-    def get_edges(self):
+    def get_edges(self) -> List[DirectedEdge]:
         return list(self._incoming_edges.values())
 
-    def get_incoming_edge(self, node_name):
+    def get_incoming_edge(self, node_name : str) -> DirectedEdge:
         if node_name not in self._nodes:
             raise KeyError(f'Unknown frame "{node_name}".')
         
