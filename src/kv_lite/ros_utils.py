@@ -4,6 +4,7 @@ import tf2_ros
 
 from jinja2  import Environment, FileSystemLoader, select_autoescape, exceptions
 from pathlib import Path
+from typing  import Set
 
 from geometry_msgs.msg  import TransformStamped as TransformStampedMsg
 
@@ -94,23 +95,23 @@ def real_quat_from_matrix(frame):
 
 class ModelTFBroadcaster(object):
     def __init__(self, model : Model, collision_alpha=0.0, param='robot_description'):
-        self.static_broadcaster  = tf2_ros.StaticTransformBroadcaster()
-        self.dynamic_broadcaster = tf2_ros.TransformBroadcaster()
+        self._static_broadcaster  = tf2_ros.StaticTransformBroadcaster()
+        self._dynamic_broadcaster = tf2_ros.TransformBroadcaster()
         self._param_name         = param
         self.refresh_model(model, collision_alpha=collision_alpha)
 
     def refresh_model(self, model : Model, collision_alpha=0.0):
-        urdf, self.transforms, self.tf_stack = gen_urdf(model, collision_alpha=collision_alpha)
+        urdf, self._transforms, self._tf_stack = gen_urdf(model, collision_alpha=collision_alpha)
 
         rospy.set_param(self._param_name, urdf)
 
     def update(self, q):
-        poses = self.tf_stack.eval(q)
+        poses = self._tf_stack.eval(q)
         
         now = rospy.Time.now()
 
         transforms = []
-        for i, (parent, child) in enumerate(self.transforms):
+        for i, (parent, child) in enumerate(self._transforms):
             tf   = poses[i*3:i*3+3]
             pos  = tf[:, 3]
             quat = real_quat_from_matrix(tf)
@@ -128,9 +129,9 @@ class ModelTFBroadcaster(object):
             msg.transform.rotation.w, = quat
             transforms.append(msg)
         
-        self.dynamic_broadcaster.sendTransform(transforms)
+        self._dynamic_broadcaster.sendTransform(transforms)
 
     @property
     def symbols(self):
-        return self.tf_stack.symbols
+        return self._tf_stack.symbols
 
