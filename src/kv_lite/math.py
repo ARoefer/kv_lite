@@ -75,8 +75,7 @@ class _CompiledFunction():
         :return:
         """
         filtered_args = np.array(filtered_args, dtype=float, order='F').reshape((len(filtered_args), 1))
-        for i in range(len(self.params)):
-            self.buf.set_arg(i, memoryview(filtered_args[i]))
+        self.buf.set_arg(0, memoryview(filtered_args))
         self.f_eval()
         return self.out # .reshape(self.shape)
     
