@@ -7,6 +7,7 @@ from pathlib import Path
 from typing  import Set
 
 from geometry_msgs.msg  import TransformStamped as TransformStampedMsg
+from scipy.spatial.transform import Rotation
 
 from .      import spatial as gm
 from .model import Model, \
@@ -55,7 +56,7 @@ def gen_urdf(model : Model, collision_alpha=0.0):
     joints = {f'{j.child}_joint': j for j in model.get_edges()}
 
     sorted_tfs = list(joints.items())
-    tf_stack   = gm.KVArray(np.vstack([model.get_fk(j.child, j.parent).transform[:3] for _, j in sorted_tfs]))
+    tf_stack   = gm.KVArray([model.get_fk(j.child, j.parent).transform for _, j in sorted_tfs])
 
     return urdf_template.render(frames=frames, joints=joints, collision_alpha=collision_alpha), \
            [(str(j.parent), str(j.child)) for _, j in sorted_tfs], tf_stack
@@ -110,11 +111,11 @@ class ModelTFBroadcaster(object):
         
         now = rospy.Time.now()
 
+        positions = poses[:, :3, 3]
+        rotations = Rotation.from_matrix(poses[:, :3, :3]).as_quat()
+
         transforms = []
-        for i, (parent, child) in enumerate(self._transforms):
-            tf   = poses[i*3:i*3+3]
-            pos  = tf[:, 3]
-            quat = real_quat_from_matrix(tf)
+        for (parent, child), pos, quat in zip(self._transforms, positions, rotations):
 
             msg  = TransformStampedMsg()
             msg.header.stamp    = now
