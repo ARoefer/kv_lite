@@ -46,9 +46,9 @@ def _speed_up(function, parameters, shape):
     m_params = [p._ca_data for p in params]
     # print(f'Speed up function: {function}\nArgs: {m_params}')
     try:
-        f = ca.Function('f', m_params, [ca.densify(function)])
+        f = ca.Function('f', [_Matrix(m_params)], [ca.densify(function)])
     except:
-        f = ca.Function('f', m_params, ca.densify(function))
+        f = ca.Function('f', [_Matrix(m_params)], ca.densify(function))
     return _CompiledFunction(params, f, shape)
 
 
@@ -63,22 +63,33 @@ class _CompiledFunction():
 
     def __call__(self, args : dict):
         try:
-            filtered_args = [float(args[k]) for k in self.params]
+            filtered_args = np.asarray([float(args[k]) for k in self.params])
             return self.call_unchecked(filtered_args)
         except KeyError as e:
             raise EvaluationError(f'Missing variable for evaluation: {e}')
 
-    def call_unchecked(self, filtered_args):
+    def call_unchecked(self, filtered_args : np.ndarray) -> np.ndarray:
+        """Evaluates the function, given all arguments in a numpy array.
+           Performs no additional checks. Supports broadcasting, meaning
+           Leading dimensions will also be present in the returned array.
+
+        Args:
+            filtered_args (np.ndarray): Arguments (..., N_Args).
+
+        Returns:
+            np.ndarray: Evaluated function (..., SHAPE).
         """
-        :param filtered_args: parameter values in the same order as in self.str_params
-        :type filtered_args: list
-        :return:
-        """
-        filtered_args = np.array(filtered_args, dtype=float, order='F').reshape((len(filtered_args), 1))
-        for i in range(len(self.params)):
-            self.buf.set_arg(i, memoryview(filtered_args[i]))
-        self.f_eval()
-        return self.out # .reshape(self.shape)
+        arg_shape = filtered_args.shape
+        filtered_args = np.array(filtered_args, dtype=float, order='F').reshape((-1, len(self.params)))
+        out = np.empty((len(filtered_args),) + self.shape, dtype=float).reshape((-1, ) + self.shape)
+        if out.ndim < 2:
+            out = out[None]
+
+        for r in range(filtered_args.shape[-2]):
+            self.buf.set_arg(0, memoryview(filtered_args[r]))
+            self.buf.set_res(0, memoryview(out[r]))
+            self.f_eval()
+        return out.reshape(arg_shape[:-1] + self.shape)
     
 
 class KVExpr():
@@ -262,15 +273,15 @@ class KVExpr():
         J = self.jacobian(positions)
         return J.dot(KVArray([[p.derivative() for p in positions]]).T).item() # Result is 1x1
 
-    def eval(self, args : dict = {}):
+    def eval(self, args : dict = {}) -> float:
         if self._function is None:
             self._function = _speed_up(self._ca_data, self.ordered_symbols, (1,))
-        return float(self._function(args))
+        return self._function(args).item()
 
-    def unchecked_eval(self, args):
+    def unchecked_eval(self, args) -> np.ndarray:
         if self._function is None:
             self._function = _speed_up(self._ca_data, self.ordered_symbols, (1,))
-        return float(self._function.call_unchecked(args))
+        return self._function.call_unchecked(args)
 
     def as_casadi(self):
         return self._ca_data
@@ -548,7 +559,7 @@ class KVArray(np.ndarray):
             return super().__pow__(np.asarray([other]))
         return super().__pow__(other)
 
-    def __call__(self, args):
+    def __call__(self, args) -> np.ndarray:
         if isinstance(args, dict):
             return self.eval(args)
         return self.unchecked_eval(args)
@@ -560,16 +571,16 @@ class KVArray(np.ndarray):
         if self._function is None:
             flat_f = [e._ca_data if isinstance(e, KVExpr) else e for e in self.flatten()]
             self._function = _speed_up(_Matrix(flat_f), self.ordered_symbols, self.shape)
-        return self._function(args).copy()
+        return self._function(args)
 
-    def unchecked_eval(self, args):
+    def unchecked_eval(self, args : np.ndarray) -> np.ndarray:
         if self.dtype != object:
             return self.copy()
 
         if self._function is None:
             flat_f = [e._ca_data if isinstance(e, KVExpr) else e for e in self.flatten()]
             self._function = _speed_up(_Matrix(flat_f), self.ordered_symbols, self.shape)
-        return self._function.call_unchecked(args).copy()
+        return self._function.call_unchecked(args)
 
     def jacobian(self, symbols):
         """Invokes jacobian() on all elements"""

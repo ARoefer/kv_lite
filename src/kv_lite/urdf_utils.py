@@ -84,6 +84,10 @@ class URDFObject():
     def joints(self):
         return {j: self._model.get_edge(en) for j, en in self._joints.items()}
 
+    @property
+    def dynamic_joints(self):
+        return {j: edge for j, en in self._joints.items() if (edge:=self._model.get_edge(en)).type != 'fixed'}
+
     def get_link(self, name):
         return self._model.get_frame(self._links[name])
     
