@@ -23,3 +23,6 @@ from .model import Model,           \
                    Body, \
                    Geometry, \
                    Inertial
+
+from .visualization import generate_expression_graph, \
+                           graph_to_html
