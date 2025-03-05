@@ -47,7 +47,7 @@ def __init_ros_serialization():
         ROS_SERIALIZER.add_serializer(floatify(serialize_np_matrix_quat), {gm.KVArray}, {QuaternionMsg})
         ROS_SERIALIZER.add_serializer(floatify(serialize_np_4x4_pose), {gm.KVArray}, {PoseMsg})
         ROS_SERIALIZER.add_serializer(floatify(serialize_np_4x1_matrix), {gm.KVArray}, {PointMsg, Vector3Msg})
-    except ModuleNotFoundError:
+    except (ModuleNotFoundError, ImportError):
         pass
 
 __init_ros_serialization()
