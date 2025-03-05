@@ -80,7 +80,7 @@ class _CompiledFunction():
             np.ndarray: Evaluated function (..., SHAPE).
         """
         arg_shape = filtered_args.shape
-        filtered_args = np.array(filtered_args, dtype=float, order='F').reshape((-1, len(self.params)))
+        filtered_args = np.array(filtered_args, dtype=float, order='C').reshape((-1, len(self.params)))
         out = np.empty((len(filtered_args),) + self.shape, dtype=float).reshape((-1, ) + self.shape)
         if out.ndim < 2:
             out = out[None]
