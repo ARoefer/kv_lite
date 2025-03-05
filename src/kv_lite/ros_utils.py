@@ -106,8 +106,11 @@ class ModelTFBroadcaster(object):
 
         rospy.set_param(self._param_name, urdf)
 
+    def transforms(self, q) -> np.ndarray:
+        return self._tf_stack(q)
+
     def update(self, q):
-        poses = self._tf_stack.eval(q)
+        poses = self._tf_stack(q)
         
         now = rospy.Time.now()
 
@@ -136,3 +139,9 @@ class ModelTFBroadcaster(object):
     def symbols(self):
         return self._tf_stack.symbols
 
+    @property
+    def ordered_symbols(self):
+        return self._tf_stack.ordered_symbols
+    
+    def set_symbol_order(self, symbols):
+        self._tf_stack.set_symbol_order(symbols)
