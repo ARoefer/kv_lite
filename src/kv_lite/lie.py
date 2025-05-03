@@ -1,12 +1,12 @@
 import numpy as np
 
-from . import math as kv
+from . import spatial as kv
 
 
 def _skew(v : kv.KVArray) -> kv.KVArray:
-    return kv.array([[  0.0, -v[2], +v[1]], 
-                     [+v[2],   0.0, -v[0]],
-                     [-v[1], +v[0],   0.0]])
+    return kv.array([[  0.0, -v[2],  v[1]], 
+                     [ v[2],   0.0, -v[0]],
+                     [-v[1],  v[0],   0.0]])
 
 def _unskew(m : kv.KVArray) -> kv.KVArray:
     return kv.array([m[2, 1] - m[1, 2],
@@ -74,7 +74,10 @@ class SE3:
         t_parallel = w * (w @ v)
         w_cross    = np.cross(w, v)
         
+        # Need to actively make the array symbolic
         out = kv.eye(4)
+        if R.is_symbolic:
+            out = out.astype(object)
         out[:3, :3] = R
         out[:3,  3] = (w_cross - R @ w_cross + t_parallel) / (theta_sq + epsilon)
 
@@ -92,4 +95,4 @@ class SE3:
                )
         t = mat[:3, 3]
         v = Ginv @ t
-        return w, v
+        return kv.hstack((w, v))
