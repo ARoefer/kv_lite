@@ -546,13 +546,13 @@ class KVArray(np.ndarray):
         return self + other
 
     def __rsub__(self, other):
-        return KVArray([other]) - self
+        return KVArray(other) - self
 
     def __rmul__(self, other):
         return self * other
 
     def __rtruediv__(self, other):
-        return KVArray([other]) / self
+        return KVArray(other) / self
 
     def __pow__(self, other):
         if isinstance(other, KVExpr):
