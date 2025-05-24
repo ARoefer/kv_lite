@@ -1,5 +1,6 @@
 import xml.etree.ElementTree as ET
 
+from functools import cached_property
 from queue  import Queue
 
 from .      import spatial as gm
@@ -87,6 +88,10 @@ class URDFObject():
     @property
     def dynamic_joints(self):
         return {j: edge for j, en in self._joints.items() if (edge:=self._model.get_edge(en)).type != 'fixed'}
+
+    @cached_property
+    def joints_by_symbols(self):
+        return {j.position: jn for jn, j in self.dynamic_joints.items()}
 
     def get_link(self, name):
         return self._model.get_frame(self._links[name])
