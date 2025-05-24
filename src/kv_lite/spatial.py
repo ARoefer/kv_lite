@@ -3,6 +3,7 @@ import numpy as np
 from .math import KVExpr, \
                   KVSymbol, \
                   KVArray, \
+                  VectorizedEvalHandler as VEval, \
                   Symbol,  \
                   Position, \
                   Velocity, \

@@ -605,6 +605,29 @@ class KVArray(np.ndarray):
     def substitute(self, assignments : dict):
         return KVArray([e.substitute(assignments) if isinstance(e, KVExpr) else e for e in self.flatten()]).reshape(self.shape)
 
+
+class VectorizedEvalHandler():
+    """Helper to facilitate working with vectorized expression evaluations.
+       Matches the given expression's symbol order to the given one and
+       filters out non-relevant symbols upon call. 
+    """
+    def __init__(self, e, vec_symbols : Iterable[Symbol]):
+        self._e = e * 1  # Multiplying by one as easy universal way of obtaining a copy
+        self._e.set_symbol_order(vec_symbols)
+        self._vec_mask = np.isin(vec_symbols, self._e.ordered_symbols)
+    
+    def __call__(self, v : np.ndarray):
+        return self._e(v[..., self._vec_mask])
+
+    @property
+    def symbols(self):
+        return self._e.symbols
+    
+    @property
+    def ordered_symbols(self):
+        return self._e.ordered_symbols
+
+
 def expr(e):
     return KVExpr(e)
 
