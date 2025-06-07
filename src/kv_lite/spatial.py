@@ -10,6 +10,7 @@ from .math import KVExpr, \
                   Acceleration, \
                   Jerk, \
                   Snap, \
+                  is_symbolic, \
                   sqrt, \
                   abs,  \
                   sin,  \

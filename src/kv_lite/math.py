@@ -424,6 +424,8 @@ def Jerk(name, prefix=None):
 def Snap(name, prefix=None):
     return KVSymbol(name, KVSymbol.TYPE_SNAP, prefix)
 
+def is_symbolic(v) -> bool:
+    return v.is_sybolic if isinstance(v, KVExpr) or isinstance(v, KVArray) else False
 
 def _find_array_shape(nl):
     if isinstance(nl, list) or isinstance(nl, tuple):
