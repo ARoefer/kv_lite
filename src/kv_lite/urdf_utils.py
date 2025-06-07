@@ -104,17 +104,59 @@ class URDFObject():
         target     = self._links[target] if target in self._links else target
         return self._model.get_fk(l_fullname, target)
 
-    @property
-    def q(self):
+    @cached_property
+    def q(self) -> list[gm.KVSymbol]:
         acc = set()
         for j in self.joints.values():
             if j.position is not None:
                 acc.update(j.position.symbols)
-        return acc
+        return list(acc)
     
-    @property
-    def q_dot(self):
-        return {p.derivative() for p in self.q}
+    @cached_property
+    def q_limit(self):
+        q_lim = gm.ones((len(self.q), 2))
+        q_lim[:, 0] *= -1
+        q_lim *= gm.np.inf
+
+        for x, j in enumerate(self.q):
+            constraints = self._model.get_constraints([j])
+            if len(constraints) > 0:
+                most_constant_constraint = None
+                score = 3
+                for c in constraints.values():
+                    s = int(gm.is_symbolic(c.lb)) + int(gm.is_symbolic(c.ub))
+                    if s < score:
+                        most_constant_constraint = c
+                        score = s
+
+                low, high, _ = most_constant_constraint
+                q_lim[x] = low, high
+        return q_lim
+
+    @cached_property
+    def q_dot(self) -> list[gm.KVSymbol]:
+        return [p.derivative() for p in self.q]
+
+    @cached_property
+    def q_dot_limit(self):
+        q_lim = gm.ones((len(self.q_dot), 2))
+        q_lim[:, 0] *= -1
+        q_lim *= gm.np.inf
+
+        for x, j in enumerate(self.q_dot):
+            constraints = self._model.get_constraints([j])
+            if len(constraints) > 0:
+                most_constant_constraint = None
+                score = 3
+                for c in constraints.values():
+                    s = int(gm.is_symbolic(c.lb)) + int(gm.is_symbolic(c.ub))
+                    if s < score:
+                        most_constant_constraint = c
+                        score = s
+
+                low, high, _ = most_constant_constraint
+                q_lim[x] = low, high
+        return q_lim
 
 
 def _parse_origin_node(on : ET.Element):
