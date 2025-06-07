@@ -19,6 +19,12 @@ class Constraint():
     def matrix(self):
         return gm.KVArray([self.lb, self.ub, self.expr])
     
+    def __iter__(self):
+        return iter((self.lb, self.ub, self.expr))
+
+    def __unpack__(self):
+        return iter((self.lb, self.ub, self.expr))
+
     @property
     def symbols(self):
         return self.expr.symbols
