@@ -617,9 +617,12 @@ class VectorizedEvalHandler():
         self._e = e * 1  # Multiplying by one as easy universal way of obtaining a copy
         self._e.set_symbol_order(vec_symbols)
         self._vec_mask = np.isin(vec_symbols, self._e.ordered_symbols)
-    
+        self._cache    = self._e.astype(float) if not self._vec_mask.any() else None
+
     def __call__(self, v : np.ndarray):
-        return self._e(v[..., self._vec_mask])
+        if self._cache is None:
+            return self._e(v[..., self._vec_mask])
+        return np.zeros(v.shape[:-1] + (1,))[...,None] + self._cache
 
     @property
     def symbols(self):
@@ -628,6 +631,10 @@ class VectorizedEvalHandler():
     @property
     def ordered_symbols(self):
         return self._e.ordered_symbols
+
+    @property
+    def shape(self) -> tuple:
+        return self._e.shape
 
 
 def expr(e):
