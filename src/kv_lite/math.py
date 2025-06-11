@@ -607,6 +607,11 @@ class KVArray(np.ndarray):
     def substitute(self, assignments : dict):
         return KVArray([e.substitute(assignments) if isinstance(e, KVExpr) else e for e in self.flatten()]).reshape(self.shape)
 
+    def to_coo(self) -> tuple[np.ndarray, "KVArray"]:
+        coords = np.stack(np.meshgrid(*[np.arange(s) for s in self.shape[::-1]]), axis=-1)[...,::-1]
+        mask   = ~_vec_is_zero(self)
+        return coords[mask], self[mask]
+
 
 class VectorizedEvalHandler():
     """Helper to facilitate working with vectorized expression evaluations.
