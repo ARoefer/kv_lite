@@ -101,6 +101,10 @@ def translation3(x, y, z, w=1):
                     [0, 0, 1, z],
                     [0, 0, 0, w]])
 
+def plane_projection(normal : KVArray) -> KVArray:
+    return eye(normal.shape[-2]) - normal @ normal.T
+
+
 class Transform:
     @staticmethod
     def from_xyz(x, y, z):
