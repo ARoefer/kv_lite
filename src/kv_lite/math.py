@@ -703,7 +703,7 @@ def max(a, b):
     return np.max((a, b))
 
 sqrt = wrap_array(np.vectorize(lambda v: KVExpr(ca.sqrt(v._ca_data)) if isinstance(v, KVExpr) else np.sqrt(v)))
-abs  = wrap_array(np.vectorize(lambda v: KVExpr(ca.sqrt(v._ca_data ** 2)) if isinstance(v, KVExpr) else np.abs(v)))
+abs  = wrap_array(np.vectorize(lambda v: KVExpr(ca.fabs(v._ca_data)) if isinstance(v, KVExpr) else np.abs(v)))
 
 sin = wrap_array(np.vectorize(lambda v: KVExpr(ca.sin(v._ca_data)) if isinstance(v, KVExpr) else np.sin(v)))
 cos = wrap_array(np.vectorize(lambda v: KVExpr(ca.cos(v._ca_data)) if isinstance(v, KVExpr) else np.cos(v)))
