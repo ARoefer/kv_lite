@@ -24,7 +24,8 @@ from .model import Model,           \
                    Geometry, \
                    Inertial
 
-from .layouting import VectorizedLayout
+from .layouting import VectorizedLayout, \
+                       MacroLayout
 
 from .visualization import generate_expression_graph, \
                            graph_to_html
