@@ -107,7 +107,7 @@ class URDFObject():
     @cached_property
     def q(self) -> list[gm.KVSymbol]:
         acc = set()
-        for j in self.joints.values():
+        for j in self.dynamic_joints.values():
             if j.position is not None:
                 acc.update(j.position.symbols)
         return list(acc)
