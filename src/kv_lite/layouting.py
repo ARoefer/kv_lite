@@ -38,7 +38,9 @@ class VectorizedLayout():
         
         self._t_steps = t_steps
         self._expr    = gm.VEval(expr.squeeze(), args)
-        self._J       = gm.VEval(expr.squeeze().jacobian(args), args)
+        self._syms_derivative = args
+        self._J_coords, self._J_sparse = expr.squeeze().jacobian(self._syms_derivative).to_coo()
+        self._J_eval  = gm.VEval(self._J_sparse, self._syms_derivative)
         self._delta_t = delta_t
         self._order   = order
         self._weights = weights
@@ -49,41 +51,34 @@ class VectorizedLayout():
         self.layout(value_offset, arg_offset)
 
     def layout(self, value_offset : int, arg_offset : int):
-        # Y coordinates: number of steps * dimensions * (order + 1) * J_width
-        
-        # Each time step creates the same number of values and is dependent on J-width times (order+1) vars
-        xy_expected = len(self._t_steps) * self._expr.shape[0] * self._J.shape[1] * (self._order + 1)
+        macro_block_offsets = np.asarray([(0, -x) for x in range(self._order + 1)])[::-1] * len(self._syms_derivative)
 
-        # Y coordinates
-        y_coords = ((np.arange(len(self._t_steps) * self._expr.shape[0])[...,None]) + np.zeros(self._J.shape[1] * (self._order + 1))).flatten()
-        # Checking that there are enough indices
-        assert len(y_coords) == xy_expected
-        # And that they do not leave the bounds of the series
-        assert y_coords.min() == 0
-        assert y_coords.max() == len(self._t_steps) * self._J.shape[0] - 1
+        # Coordinates of the Jacobian of an entire time step (E, J_W * (order+1))
+        # Ordered t-o, t-o+1, ..., t
+        step_J_coords = (macro_block_offsets[:,None] + self._J_coords[None]).reshape((-1, 2))
+
+        t_block_offsets = np.asarray([(x * self._expr.shape[0],
+                                       x * len(self._syms_derivative)) for x in range(len(self._t_steps))])
+
+        full_J_coords = (t_block_offsets[:,None] + step_J_coords[None]).reshape((-1, 2)) + (value_offset, arg_offset)
+
+        self._J_MASK  = ~(full_J_coords < 0).any(axis=1)
+        self._J_CACHE = np.empty((full_J_coords.shape[0], 3))
+        self._J_CACHE[:, :2] = full_J_coords
         
-        # X coordinates
-        J_x_base_coords = (np.arange(self._J.shape[1] * (self._order + 1)) + np.zeros((self._J.shape[0], 1)))
-        x_coords = (J_x_base_coords + ((np.arange(len(self._t_steps)) + self._required_steps[0]) * self._J.shape[1])[None,:,None,None]).flatten()
-        # Checking that there are enough indices
-        assert len(x_coords) == xy_expected
-        # And that they do not leave the bounds of the arguments
-        assert x_coords.min() == self._required_steps[0] * self._J.shape[1]
-        assert x_coords.max() == (self._required_steps[-1] + 1) * self._J.shape[1] - 1
-        coord_mask = (y_coords >= 0) & (x_coords >= 0)
-        
-        self._J_CACHE = np.empty((coord_mask.sum(), 3))
-        self._J_CACHE[:, 0] = y_coords[coord_mask] + value_offset
-        self._J_CACHE[:, 1] = x_coords[coord_mask] + arg_offset
-        
-        self._J_MASK = None
-        if self._pad_steps > 0:
-            self._J_MASK = np.ones((len(self._t_steps),
-                                    self._J.shape[0],
-                                    (self._order + 1),
-                                    self._J.shape[1]), dtype=bool)
-            for ps in range(self._pad_steps):
-                self._J_MASK[ps,:,:self._pad_steps-ps] = False
+        self._J_DATA_VIEW = np.lib.stride_tricks.as_strided(self._J_CACHE[0, 2:],
+                                                            (len(self._t_steps), self._order + 1, len(self._J_coords)),
+                                                            ((self._order + 1) * len(self._J_coords) * self._J_CACHE.strides[0],
+                                                             len(self._J_coords) * self._J_CACHE.strides[0],
+                                                             self._J_CACHE.strides[0]))
+        # self._J_MASK = None
+        # if self._pad_steps > 0:
+        #     self._J_MASK = np.ones((len(self._t_steps),
+        #                             self._J.shape[0],
+        #                             (self._order + 1),
+        #                             self._J.shape[1]), dtype=bool)
+        #     for ps in range(self._pad_steps):
+        #         self._J_MASK[ps,:,:self._pad_steps-ps] = False
 
     @cached_property
     def symbols(self) -> set[gm.KVSymbol]:
@@ -105,13 +100,13 @@ class VectorizedLayout():
     def J_size(self) -> int:
         return self._J_CACHE.shape[0]
 
-    def eval_expr(self, M : np.ndarray) -> np.ndarray:
+    def eval_expr(self, M : np.ndarray, pad_values : np.ndarray=None) -> np.ndarray:
         # Ensure that we evaluate exactly as much as we said we would
         assert np.prod(M.shape[:-1]) == len(self.required_steps)
 
         if self._pad_steps > 0:
             M_pad = np.empty((M.shape[0] + self._pad_steps, M.shape[1]))
-            M_pad[:self._pad_steps] = M[0]
+            M_pad[:self._pad_steps] = M[0] if pad_values is None else pad_values
             M_pad[self._pad_steps:] = M
         else:
             M_pad = M
@@ -154,45 +149,39 @@ class VectorizedLayout():
         # 
         # 0 J/x_{t-O}  J/x_{t-O+1} .... J/x_{t} 
         # 0 ... J/x_{t-O}  J/x_{t-O+1} .... J/x_{t} 
-        J_dense = np.empty((len(self._t_steps),
-                            self._J.shape[0],
-                            (self._order + 1),
-                            self._J.shape[1]))
 
         match self._order:
             case 0:
                 # Dense Jacobian to return
-                J_dense = self._J(M_pad)
+                self._J_DATA_VIEW[:] = self._J_eval(M_pad).reshape(self._J_DATA_VIEW.shape)
             case 1:
                 # J of velocity
-                J_temp  = self._J(M_pad)
+                J_temp  = self._J_eval(M_pad)
                 J_temp /= self._delta_t
-                J_dense[:,:,0] = -J_temp[:-1]
-                J_dense[:,:,1] =  J_temp[1: ]
+                self._J_DATA_VIEW[:, 0] = -J_temp[:-1].reshape(s:=self._J_DATA_VIEW[:, 0].shape)
+                self._J_DATA_VIEW[:, 1] =  J_temp[1: ].reshape(s)
             case 2:
                 # J of acceleration
                 # (x_t - 2x_{t-1} + x_{t-2}) / dt^2
-                J_temp  = self._J(M_pad)
+                J_temp  = self._J_eval(M_pad)
                 dt_sq = (self._delta_t**2)
-                J_dense[:,:,0] = J_temp[:-2] / dt_sq
-                J_dense[:,:,1] = (-2 * J_temp[1:-1]) / dt_sq
-                J_dense[:,:,2] = J_temp[2:] / dt_sq
+                self._J_DATA_VIEW[:, 2] = J_temp[:-2].reshape(s:=self._J_DATA_VIEW[:, 2].shape) / dt_sq
+                self._J_DATA_VIEW[:, 1] = (-2 * J_temp[1:-1].reshape(s)) / dt_sq
+                self._J_DATA_VIEW[:, 0] = J_temp[2:].reshape(s) / dt_sq
             case 3:
                 # (x_T - 3x_{t-1} + 3x_{t-2} - x_{t-3}) / dt^3
-                J_temp  = self._J(M_pad)
+                J_temp  = self._J_eval(M_pad)
                 dt_cube = (self._delta_t**3)
-                J_dense[:,:,0] = -J_temp[:-3] / dt_cube
-                J_dense[:,:,1] = (3 / dt_cube) * J_temp[1:-2]
-                J_dense[:,:,2] = (-3 / dt_cube) * J_temp[2:-1]
-                J_dense[:,:,3] = J_temp[3:] / dt_cube
+                self._J_DATA_VIEW[:, 3] = -J_temp[:-3].reshape(s:=self._J_DATA_VIEW[:, 3].shape) / dt_cube
+                self._J_DATA_VIEW[:, 2] = (3 / dt_cube) * J_temp[1:-2].reshape(s)
+                self._J_DATA_VIEW[:, 1] = (-3 / dt_cube) * J_temp[2:-1].reshape(s)
+                self._J_DATA_VIEW[:, 0] = J_temp[3:].reshape(s) / dt_cube
 
         if self._weights is not None:
-            J_dense = self._weights @ J_dense if type(self._weights) == np.ndarray else self._weights * J_dense
+            self._J_DATA_VIEW *= self._weights
         
         if self._J_MASK is not None:
-            self._J_CACHE[:, 2] = J_dense[self._J_MASK].flatten()
-        else:
-            self._J_CACHE[:, 2] = J_dense.flatten()
+            return self._J_CACHE[self._J_MASK]
         return self._J_CACHE
     
 class MacroLayout():
