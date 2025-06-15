@@ -292,6 +292,12 @@ class KVExpr():
                                         KVArray(list(assignments.values())).as_casadi()))
 
 
+    def set_stamp(self, stamp : int, symbols : Iterable["KVSymbol"]=None) -> "KVExpr":
+        if symbols is None:
+            symbols = self.symbols
+        return self.substitute({s: s.set_stamp(stamp) for s in symbols})
+
+
 class KVSymbol(KVExpr):
     _INSTANCES = {}
 
@@ -309,7 +315,7 @@ class KVSymbol(KVExpr):
                      'snap': TYPE_SNAP}
     TYPE_SUFFIXES_INV = {v: k for k, v in TYPE_SUFFIXES.items()}
 
-    def __new__(cls, name, typ=TYPE_UNKNOWN, prefix=None):
+    def __new__(cls, name, typ=TYPE_UNKNOWN, prefix=None, stamp=None):
         if typ not in KVSymbol.TYPE_SUFFIXES_INV:
             raise KeyError(f'Unknown symbol type {typ}')
         
@@ -317,6 +323,12 @@ class KVSymbol(KVExpr):
         if prefix is not None:
             full_name = f'{prefix}__{full_name}'
         
+        if stamp is not None:
+            if not isinstance(stamp, int):
+                raise ValueError(f'Stamps are expected to be integers. Given stamp "{stamp}" is a "{type(stamp)}".')
+
+            full_name = f'{full_name}__t{stamp}'
+
         if full_name in KVSymbol._INSTANCES:
             return KVSymbol._INSTANCES[full_name]
         
@@ -324,6 +336,7 @@ class KVSymbol(KVExpr):
         out.name = name
         out.type = typ
         out.prefix = prefix
+        out.stamp  = stamp
         out._full_name = full_name
         out._symbols   = frozenset({out})
         KVSymbol._INSTANCES[full_name] = out
@@ -375,7 +388,7 @@ class KVSymbol(KVExpr):
         if self.type == KVSymbol.TYPE_SNAP:
             raise RuntimeError(f'Cannot differentiate symbol beyond snap.')
 
-        return KVSymbol(self.name, self.type + 1, self.prefix)
+        return KVSymbol(self.name, self.type + 1, self.prefix, self.stamp)
     
     def integral(self):
         if self.type == KVSymbol.TYPE_UNKNOWN:
@@ -383,7 +396,7 @@ class KVSymbol(KVExpr):
         if self.type == KVSymbol.TYPE_POSITION:
             raise RuntimeError(f'Cannot integrate symbol beyond position.')
 
-        return KVSymbol(self.name, self.type - 1, self.prefix)
+        return KVSymbol(self.name, self.type - 1, self.prefix, self.stamp)
 
     def eval(self, args : dict):
         if self in args:
@@ -404,25 +417,28 @@ class KVSymbol(KVExpr):
         if isinstance(array, np.ndarray):
             return KVArray([cls(f'{prefix}_{x}') for x in range(prod(array.shape))]).reshape(array.shape)
         return prefix
+    
+    def set_stamp(self, stamp : int) -> "KVSymbol":
+        return KVSymbol(self.name, self.type, self.prefix, stamp)
 
 
-def Symbol(name, prefix=None):
-    return KVSymbol(name, KVSymbol.TYPE_UNKNOWN, prefix)
+def Symbol(name, prefix=None, stamp : int=None):
+    return KVSymbol(name, KVSymbol.TYPE_UNKNOWN, prefix, stamp)
 
-def Position(name, prefix=None):
-    return KVSymbol(name, KVSymbol.TYPE_POSITION, prefix)
+def Position(name, prefix=None, stamp : int=None):
+    return KVSymbol(name, KVSymbol.TYPE_POSITION, prefix, stamp)
 
-def Velocity(name, prefix=None):
-    return KVSymbol(name, KVSymbol.TYPE_VELOCITY, prefix)
+def Velocity(name, prefix=None, stamp : int=None):
+    return KVSymbol(name, KVSymbol.TYPE_VELOCITY, prefix, stamp)
 
-def Acceleration(name, prefix=None):
-    return KVSymbol(name, KVSymbol.TYPE_ACCEL, prefix)
+def Acceleration(name, prefix=None, stamp : int=None):
+    return KVSymbol(name, KVSymbol.TYPE_ACCEL, prefix, stamp)
 
-def Jerk(name, prefix=None):
-    return KVSymbol(name, KVSymbol.TYPE_JERK, prefix)
+def Jerk(name, prefix=None, stamp : int=None):
+    return KVSymbol(name, KVSymbol.TYPE_JERK, prefix, stamp)
 
-def Snap(name, prefix=None):
-    return KVSymbol(name, KVSymbol.TYPE_SNAP, prefix)
+def Snap(name, prefix=None, stamp : int=None):
+    return KVSymbol(name, KVSymbol.TYPE_SNAP, prefix, stamp)
 
 def is_symbolic(v) -> bool:
     return v.is_sybolic if isinstance(v, KVExpr) or isinstance(v, KVArray) else False
@@ -606,6 +622,11 @@ class KVArray(np.ndarray):
 
     def substitute(self, assignments : dict):
         return KVArray([e.substitute(assignments) if isinstance(e, KVExpr) else e for e in self.flatten()]).reshape(self.shape)
+
+    def set_stamp(self, stamp : int, symbols : Iterable["KVSymbol"]=None) -> "KVSymbol":
+        if symbols is None:
+            symbols = self.symbols
+        return self.substitute({s: s.set_stamp(stamp) for s in symbols})
 
     def to_coo(self) -> tuple[np.ndarray, "KVArray"]:
         coords = np.stack(np.meshgrid(*[np.arange(s) for s in self.shape[::-1]]), axis=-1)[...,::-1]
