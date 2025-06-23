@@ -23,6 +23,12 @@ from functools import cached_property
 class VectorizedLayout():
     """Wrapper to create KOMO-style k-th order costs of expressions and compute the
        matching sparse Jacobian. Only supports constant and equal time steps.
+
+       The vectorized layout differentiates between per-timestep symbols and shared
+       symbols. If more than one consistent symbol stamp is used, the stamps != None
+       identify symbols from a series. The distance between the different stamps identifies
+       their delta in time. The reference is only ever backwards, so tagging a a_t=0 and a_t=5
+       leads to the eval handler requesting the time step t-5 for the current step t.
     """
     def __init__(self, expr : gm.KVArray,
                        t_steps : list[int],
@@ -31,21 +37,83 @@ class VectorizedLayout():
                        order : int=0,
                        weights : float | np.ndarray=None,
                        bias    : float | np.ndarray=None,
+                       diff_symbols : set[gm.KVSymbol]=None,
                        value_offset : int=0,
                        arg_offset   : int=0):
         if order > 3:
             raise NotImplementedError(f'Currently only support order until 3. You gave {order}')
         
+        if type(args) not in {list, tuple, np.ndarray, gm.KVArray}:
+            raise ValueError(f'Arguments need to be provided as an ordered type. Type "{type(args)}" is unordered.')
+
+        args = gm.array(args) if not isinstance(args, gm.KVArray) else args
+
+        self._original_diff_symbols = diff_symbols
         self._t_steps = t_steps
-        self._expr    = gm.VEval(expr.squeeze(), args)
-        self._syms_derivative = args
-        self._J_coords, self._J_sparse = expr.squeeze().jacobian(self._syms_derivative).to_coo()
-        self._J_eval  = gm.VEval(self._J_sparse, self._syms_derivative)
-        self._delta_t = delta_t
         self._order   = order
+        self._required_steps = list(range(self._t_steps[0] - self._order, self._t_steps[0])) + self._t_steps
+        self._series_symbols = args
+        self._shared_symbols = None
+
+        stamps = {v.stamp for v in expr.symbols}
+        if len(stamps) > 1:
+            if None in stamps:
+                shared_syms = {v for v in expr.symbols if v.stamp is None}
+                shared_mask = [v in shared_syms for v in args]
+                stamps.remove(None)
+                self._n_shared_syms = len(shared_syms)
+            else:
+                shared_mask = None
+                shared_syms = []
+                self._n_shared_syms = 0
+
+            max_stamp = max(stamps)
+            vars_by_stamp = {s - max_stamp: {v.set_stamp(None) for v in expr.symbols if v.stamp == s} for s in sorted(stamps) if s is not None}
+            vars_by_stamp_mask = {s - max_stamp: [v in syms for v in args] for s, syms in vars_by_stamp.items()}
+            self._step_mask = np.hstack(list(vars_by_stamp_mask.values()))
+            relative_steps = np.asarray(list(vars_by_stamp_mask.keys()))
+            self._step_reorder = np.asarray(self._required_steps)[:,None] + relative_steps[None]
+            self._required_steps = sorted(set(self._step_reorder.flatten()))
+            self._step_reorder -= self._step_reorder.min()
+            J_coord_offsets = (0, relative_steps.min() * (len(diff_symbols) - len(shared_syms)))
+            
+            # Generate the arguments needed for evaluation. We stack them from lowest to highest t.
+            self._eval_args = gm.hstack([args[mask].set_stamp(stamp) for stamp, mask in vars_by_stamp_mask.items()])
+            # We always lead with the shared arguments            
+            if shared_mask is not None:
+                self._eval_args = gm.hstack((args[shared_mask], self._eval_args))
+                self._shared_symbols = args[shared_mask]
+                self._series_symbols = args[~np.asarray(shared_mask)]
+
+            if diff_symbols is None:
+                self._syms_derivative = self._eval_args
+                self._n_shared_diffs  = 0 if shared_mask is None else len(shared_syms)
+            else:
+                self._syms_derivative = gm.hstack([gm.array([s.set_stamp(stamp) for s in args[mask] if s in diff_symbols]) for stamp, mask in vars_by_stamp_mask.items()])
+                if shared_mask is not None:
+                    self._n_shared_diffs = len(shared_syms & diff_symbols)
+                    # Also with the derivatives, we prepend them for the evaluation
+                    if self._n_shared_diffs > 0:
+                        self._syms_derivative = gm.hstack([gm.array([s for s in args[shared_mask] if s in diff_symbols]),
+                                                           self._syms_derivative])
+        else:
+            self._step_reorder = None
+            J_coord_offsets = (0, 0)
+            self._eval_args = args
+            self._syms_derivative = args if diff_symbols is None else args[np.isin(args, list(diff_symbols))]
+            self._n_shared_diffs = 0
+            self._n_shared_syms  = 0
+
+        self._width_step_derivative = len(diff_symbols)
+        self._expr    = gm.VEval(expr.reshape((-1,)), self._eval_args)
+
+        self._J_coords, self._J_sparse = expr.squeeze().jacobian(self._syms_derivative).reshape((-1, len(self._syms_derivative))).to_coo()
+        self._J_shared = self._J_coords[:, 1] < self._n_shared_diffs
+        self._J_coords[~self._J_shared] += J_coord_offsets
+        self._J_eval  = gm.VEval(self._J_sparse, self._eval_args)
+        self._delta_t = delta_t
         self._weights = weights
         self._bias    = bias
-        self._required_steps = list(range(self._t_steps[0] - self._order, self._t_steps[0])) + self._t_steps
         self._pad_steps = sum([s < 0 for s in self._required_steps])
     
         self.layout(value_offset, arg_offset)
@@ -58,11 +126,17 @@ class VectorizedLayout():
         step_J_coords = (macro_block_offsets[:,None] + self._J_coords[None]).reshape((-1, 2))
 
         t_block_offsets = np.asarray([(x * self._expr.shape[0],
-                                       x * len(self._syms_derivative)) for x in range(len(self._t_steps))])
+                                       x * (self._width_step_derivative - self._n_shared_diffs)) for x in range(len(self._t_steps))])
 
-        full_J_coords = (t_block_offsets[:,None] + step_J_coords[None]).reshape((-1, 2)) + (value_offset, arg_offset)
+        full_J_coords_steps = t_block_offsets[:,None] + step_J_coords[None]
+        # We're resetting the horizontal offsets of all shared vars
+        full_J_coords_steps += (value_offset, arg_offset)
+        full_J_coords_steps[:, self._J_shared, 1] = self._J_coords[self._J_shared, 1]
+        full_J_coords = full_J_coords_steps.reshape((-1, 2))
 
-        self._J_MASK  = ~(full_J_coords < 0).any(axis=1)
+        # TODO: Figure out J-mask and C offsets
+        self._J_MASK  = ((full_J_coords_steps[..., 1] >= self._J_shared.sum()) | self._J_shared) & (full_J_coords_steps[..., 0] >= 0)
+        self._J_MASK  = self._J_MASK.reshape((-1,))
         self._J_CACHE = np.empty((full_J_coords.shape[0], 3))
         self._J_CACHE[:, :2] = full_J_coords
         
@@ -71,14 +145,27 @@ class VectorizedLayout():
                                                             ((self._order + 1) * len(self._J_coords) * self._J_CACHE.strides[0],
                                                              len(self._J_coords) * self._J_CACHE.strides[0],
                                                              self._J_CACHE.strides[0]))
-        # self._J_MASK = None
-        # if self._pad_steps > 0:
-        #     self._J_MASK = np.ones((len(self._t_steps),
-        #                             self._J.shape[0],
-        #                             (self._order + 1),
-        #                             self._J.shape[1]), dtype=bool)
-        #     for ps in range(self._pad_steps):
-        #         self._J_MASK[ps,:,:self._pad_steps-ps] = False
+
+    def reorder_symbols(self, new_order : list[gm.KVSymbol],
+                        value_offset : int=0, arg_offset : int=0) -> "VectorizedLayout":
+        return VectorizedLayout(self._expr._e,
+                                self._t_steps,
+                                new_order,
+                                self._delta_t,
+                                self._order,
+                                self._weights,
+                                self._bias,
+                                self._original_diff_symbols,
+                                value_offset,
+                                arg_offset)
+
+    @property
+    def series_symbols(self) -> gm.KVArray[gm.KVSymbol]:
+        return self._series_symbols
+
+    @property
+    def shared_symbols(self) -> gm.KVArray[gm.KVSymbol]:
+        return self._shared_symbols
 
     @cached_property
     def symbols(self) -> set[gm.KVSymbol]:
@@ -87,6 +174,10 @@ class VectorizedLayout():
     @cached_property
     def ordered_symbols(self) -> set[gm.KVSymbol]:
         return self._expr.ordered_symbols
+
+    @cached_property
+    def unstamped_symbols(self) -> set[gm.KVSymbol]:
+        return {s.set_stamp(None) for s in self.symbols}
 
     @cached_property
     def required_steps(self) -> list[int]:
@@ -98,20 +189,40 @@ class VectorizedLayout():
 
     @cached_property
     def J_size(self) -> int:
-        return self._J_CACHE.shape[0]
+        return self._J_MASK.sum()
 
-    def eval_expr(self, M : np.ndarray, pad_values : np.ndarray=None) -> np.ndarray:
-        # Ensure that we evaluate exactly as much as we said we would
-        assert np.prod(M.shape[:-1]) == len(self.required_steps)
+    def eval_expr(self, series : np.ndarray, shared : np.ndarray=None, series_pad_values : np.ndarray=None) -> np.ndarray:
+        return self._eval_expr(self._make_M(series, shared, series_pad_values))
+
+    def eval_J(self, series : np.ndarray, shared : np.ndarray=None, series_pad_values : np.ndarray=None) -> np.ndarray:
+        return self._eval_J(self._make_M(series, shared, series_pad_values))
+    
+    def eval_all(self, series : np.ndarray, shared : np.ndarray=None, series_pad_values : np.ndarray=None) -> tuple[np.ndarray, np.ndarray]:
+        big_M = self._make_M(series, shared, series_pad_values)
+        return self._eval_expr(big_M), self.eval_J(big_M)
+
+    def _make_M(self, series : np.ndarray, shared : np.ndarray=None, series_pad_values : np.ndarray=None) -> np.ndarray:
+        assert np.prod(series.shape[:-1]) == len(self.required_steps)
 
         if self._pad_steps > 0:
-            M_pad = np.empty((M.shape[0] + self._pad_steps, M.shape[1]))
-            M_pad[:self._pad_steps] = M[0] if pad_values is None else pad_values
-            M_pad[self._pad_steps:] = M
+            series_pad = np.empty((series.shape[0] + self._pad_steps, series.shape[1]))
+            series_pad[:self._pad_steps] = series[0] if series_pad_values is None else series_pad_values
+            series_pad[self._pad_steps:] = series
         else:
-            M_pad = M
+            series_pad = series
 
-        e_out = self._expr(M_pad)
+        if self._step_reorder is not None:
+            series_pad = series_pad[self._step_reorder].reshape((self._step_reorder.shape[0], -1))
+
+        big_M = np.empty((series_pad.shape[0],
+                          len(self._eval_args)))
+        big_M[:, :self._n_shared_syms] = shared
+        big_M[:, self._n_shared_syms:] = series_pad
+
+        return big_M
+    
+    def _eval_expr(self, big_M : np.ndarray) -> np.ndarray:
+        e_out = self._expr(big_M)
         
         match self._order:
             case 0:
@@ -133,17 +244,8 @@ class VectorizedLayout():
         if self._bias is None:
             return out
         return out + self._bias
-
-    def eval_J(self, M : np.ndarray) -> np.ndarray:
-        # Ensure that we evaluate exactly as much as we said we would
-        assert np.prod(M.shape[:-1]) == len(self.required_steps)
-
-        if self._pad_steps > 0:
-            M_pad = np.empty((M.shape[0] + self._pad_steps, M.shape[1]))
-            M_pad[:self._pad_steps] = M[0]
-        else:
-            M_pad = M
-
+    
+    def _eval_J(self, big_M : np.ndarray) -> np.ndarray:
         # Dense representation of the Jacobian
         # (T, O+1, V, Q)
         # 
@@ -153,24 +255,24 @@ class VectorizedLayout():
         match self._order:
             case 0:
                 # Dense Jacobian to return
-                self._J_DATA_VIEW[:] = self._J_eval(M_pad).reshape(self._J_DATA_VIEW.shape)
+                self._J_DATA_VIEW[:] = self._J_eval(big_M).reshape(self._J_DATA_VIEW.shape)
             case 1:
                 # J of velocity
-                J_temp  = self._J_eval(M_pad)
+                J_temp  = self._J_eval(big_M)
                 J_temp /= self._delta_t
                 self._J_DATA_VIEW[:, 0] = -J_temp[:-1].reshape(s:=self._J_DATA_VIEW[:, 0].shape)
                 self._J_DATA_VIEW[:, 1] =  J_temp[1: ].reshape(s)
             case 2:
                 # J of acceleration
                 # (x_t - 2x_{t-1} + x_{t-2}) / dt^2
-                J_temp  = self._J_eval(M_pad)
+                J_temp  = self._J_eval(big_M)
                 dt_sq = (self._delta_t**2)
                 self._J_DATA_VIEW[:, 2] = J_temp[:-2].reshape(s:=self._J_DATA_VIEW[:, 2].shape) / dt_sq
                 self._J_DATA_VIEW[:, 1] = (-2 * J_temp[1:-1].reshape(s)) / dt_sq
                 self._J_DATA_VIEW[:, 0] = J_temp[2:].reshape(s) / dt_sq
             case 3:
                 # (x_T - 3x_{t-1} + 3x_{t-2} - x_{t-3}) / dt^3
-                J_temp  = self._J_eval(M_pad)
+                J_temp  = self._J_eval(big_M)
                 dt_cube = (self._delta_t**3)
                 self._J_DATA_VIEW[:, 3] = -J_temp[:-3].reshape(s:=self._J_DATA_VIEW[:, 3].shape) / dt_cube
                 self._J_DATA_VIEW[:, 2] = (3 / dt_cube) * J_temp[1:-2].reshape(s)
@@ -183,7 +285,8 @@ class VectorizedLayout():
         if self._J_MASK is not None:
             return self._J_CACHE[self._J_MASK]
         return self._J_CACHE
-    
+
+
 class MacroLayout():
     def __init__(self, **components : VectorizedLayout):
         self._components = components
@@ -196,35 +299,53 @@ class MacroLayout():
             raise ValueError('Somehow a component is defining a cost for a negative time step.')
         
         if (sorted_steps[1:] - sorted_steps[:-1] != 1).any():
-            raise ValueError(f'Given problem does not densly cover all timesteps. Steps:\n  {sorted_steps}')
+            raise ValueError(f'Given problem does not densely cover all timesteps. Steps:\n  {sorted_steps}')
 
-        all_series_symbols = set(sum([c.ordered_symbols for c in self._components.values()], []))
-        if len(a:=[c for c in self._components.values() if len(c.symbols) != len(all_series_symbols)]) > 0:
-            raise ValueError(f'Non-overlapping series-symbols in {a}')
+        # We don't neeed this anymore. There's logic for merging the symbols below
+        # all_series_symbols = set(sum([list(c.unstamped_symbols) for c in self._components.values()], []))
+        # if len(a:=[c for c in self._components.values() if len(c.unstamped_symbols) != len(all_series_symbols)]) > 0:
+        #     raise ValueError(f'Non-overlapping series-symbols in {a}')
         
         self._n_series_steps = len(all_steps)
 
-        series_width = len(all_series_symbols)
+        series_symbols = set()
+        shared_symbols = set()
+        for n, c in components.items():
+            series_symbols |= set(c.series_symbols)
+            if c.shared_symbols is not None:
+                shared_symbols |= set(c.shared_symbols)
+            if len(intersect:=(shared_symbols & series_symbols)) > 0:
+                raise ValueError(f'Processing {n} led to an overlap of series symbols and shared symbols: {intersect}')
+
+        self._new_symbol_order = gm.array(list(shared_symbols) + list(series_symbols))
+        self._shared_symbols = self._new_symbol_order[:len(shared_symbols)]
+        self._series_symbols = self._new_symbol_order[:len(series_symbols)]
+        updated_components = {}
+
+        series_width = len(series_symbols)
         component_arg_offsets   = [min(c.required_steps) * series_width for c in self._components.values()]
         self._component_value_offsets = [0]
-        for c in self._components.values():
+        self._component_J_offsets     = [0]
+        for (n, c), arg_offset in zip(self._components.items(), component_arg_offsets):
             # Apply layout
-            c.layout(self._component_value_offsets[-1], 0)
+            updated_components[n] = c.reorder_symbols(self._new_symbol_order,
+                                                      self._component_value_offsets[-1],
+                                                      arg_offset)
             self._component_value_offsets.append(self._component_value_offsets[-1] + c.dim)
-        del self._component_value_offsets[-1]
-
-        self._component_J_offsets = [0]
-        for c in self._components.values():
-            # Apply layout
             self._component_J_offsets.append(self._component_J_offsets[-1] + c.J_size)
+        del self._component_value_offsets[-1]
         del self._component_J_offsets[-1]
-        self._J_size = sum([c.J_size for c in self._components.values()])
 
+        self._J_size = sum([c.J_size for c in self._components.values()])
         self._x_shape = (len(sorted_steps), series_width)
 
     @property
-    def series_symbols(self) -> list[gm.KVSymbol]:
-        return next(iter(self._components.values())).ordered_symbols
+    def series_symbols(self) -> gm.KVArray:
+        return self._series_symbols
+    
+    @property
+    def shared_symbols(self) -> gm.KVArray:
+        return self._shared_symbols
 
     @property
     def n_series_steps(self) -> int:
@@ -232,34 +353,47 @@ class MacroLayout():
 
     @cached_property
     def in_dim(self) -> int:
-        return len(self.series_symbols) * self._n_series_steps
+        return len(self._shared_symbols) + len(self._series_symbols) * self._n_series_steps
 
     @cached_property
     def out_dim(self) -> int:
         return sum([c.dim for c in self._components.values()])
 
-    def eval_expr(self, x : np.ndarray) -> np.ndarray:
-        x = x.reshape(self._x_shape)
+    def _make_M_and_S(self, x : np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        return x[:len(self._shared_symbols)], x[len(self._shared_symbols):].reshape((-1, len(self._series_symbols)))
+
+    def eval_all(self, x : np.ndarray, pads : dict[str, np.ndarray]=None) -> np.ndarray:
+        x_shared, x_series = self._make_M_and_S(x)
+        return self._eval_expr(x_shared, x_series, pads), self._eval_J(x_shared, x_series, pads)
+
+    def eval_expr(self, x : np.ndarray, pads : dict[str, np.ndarray]=None) -> np.ndarray:
+        return self._eval_expr(*self._make_M_and_S(x), pads)
+
+    def eval_J(self, x : np.ndarray, pads : dict[str, np.ndarray]=None) -> np.ndarray:
+        return self._eval_J(*self._make_M_and_S(x), pads)
+
+    def _eval_expr(self, x_shared : np.ndarray, x_series: np.ndarray, pads : np.ndarray=None) -> np.ndarray:
         out_expr = np.empty(self.out_dim, dtype=float)
-        for c, offset in zip(self._components.values(),
-                             self._component_value_offsets):
-            out_expr[offset:offset+c.dim] = c.eval_expr(x[c.required_steps]).flatten()
-
+        for (n, c), offset in zip(self._components.items(),
+                                  self._component_value_offsets):
+            out_expr[offset:offset+c.dim] = c.eval_expr(x_series[c.required_steps],
+                                                        x_shared,
+                                                        pads).flatten()
         return out_expr
-
-    def eval_J(self, x : np.ndarray) -> np.ndarray:
-        x = x.reshape(self._x_shape)
-        out_J    = np.empty((self._J_size, 3))
-        for c, offset in zip(self._components.values(),
-                             self._component_J_offsets):
-            out_J[offset:offset+c.J_size] = c.eval_J(x[c.required_steps])
+    
+    def _eval_J(self, x_shared : np.ndarray, x_series: np.ndarray, pads : np.ndarray=None) -> np.ndarray:
+        out_J = np.empty((self._J_size, 3))
+        for (n, c), offset in zip(self._components.items(),
+                                  self._component_J_offsets):
+            out_J[offset:offset+c.J_size] = c.eval_J(x_series[c.required_steps],
+                                                     x_shared,
+                                                     pads)
 
         if out_J[:,:2].min() < 0:
             raise ValueError(f'Sparse Jacobian coordinates are less than 0.')
         
         if ((self.out_dim, self.in_dim) - out_J[:,:2].max(axis=0) < 1).any():
             raise ValueError(f'Sparse Jacobian coordinates are out of limits. Limit: {self.out_dim - 1, self.in_dim - 1}, Given: {out_J[:,:2].max(axis=0)}.')
-
         return out_J
 
     def report(self, x : np.ndarray) -> dict[str, float]:
