@@ -25,7 +25,9 @@ from .model import Model,           \
                    Inertial
 
 from .layouting import VectorizedLayout, \
-                       MacroLayout
+                       MacroLayout, \
+                       RAI_NLPSolver, \
+                       SolverObjectives
 
 from .visualization import generate_expression_graph, \
                            graph_to_html
