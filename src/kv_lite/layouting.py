@@ -67,15 +67,15 @@ class VectorizedLayout():
                 shared_syms = []
                 self._n_shared_syms = 0
 
-            max_stamp = max(stamps)
-            vars_by_stamp = {s - max_stamp: {v.set_stamp(None) for v in expr.symbols if v.stamp == s} for s in sorted(stamps) if s is not None}
-            vars_by_stamp_mask = {s - max_stamp: [v in syms for v in args] for s, syms in vars_by_stamp.items()}
+            min_stamp = min(stamps)
+            vars_by_stamp = {s - min_stamp: {v.set_stamp(None) for v in expr.symbols if v.stamp == s} for s in sorted(stamps) if s is not None}
+            vars_by_stamp_mask = {s: [v in syms for v in args] for s, syms in vars_by_stamp.items()}
             self._step_mask = np.hstack(list(vars_by_stamp_mask.values()))
             relative_steps = np.asarray(list(vars_by_stamp_mask.keys()))
             self._step_reorder = np.asarray(self._required_steps)[:,None] + relative_steps[None]
             self._required_steps = sorted(set(self._step_reorder.flatten()))
             self._step_reorder -= self._step_reorder.min()
-            J_coord_offsets = (0, relative_steps.min() * (len(diff_symbols) - len(shared_syms)))
+            J_coord_offsets = (0, relative_steps.min() * (len(args) - len(shared_syms)))
             
             # Generate the arguments needed for evaluation. We stack them from lowest to highest t.
             self._eval_args = gm.hstack([args[mask].set_stamp(stamp) for stamp, mask in vars_by_stamp_mask.items()])
@@ -97,6 +97,9 @@ class VectorizedLayout():
                         self._syms_derivative = gm.hstack([gm.array([s for s in args[shared_mask] if s in diff_symbols]),
                                                            self._syms_derivative])
         else:
+            if next(iter(stamps)) is not None:
+                expr = expr.set_stamp(None)
+
             self._step_reorder = None
             J_coord_offsets = (0, 0)
             self._eval_args = args
@@ -105,7 +108,7 @@ class VectorizedLayout():
             self._n_shared_syms  = 0
 
         self._unstamped_diff_symbols = {s.set_stamp(None) for s in self._syms_derivative}
-        self._width_step_derivative  = len(diff_symbols)
+        self._width_step_derivative  = len(self._unstamped_diff_symbols)
         self._expr    = gm.VEval(expr.reshape((-1,)), self._eval_args)
 
         self._J_coords, self._J_sparse = expr.squeeze().jacobian(self._syms_derivative).reshape((-1, len(self._syms_derivative))).to_coo()
@@ -132,12 +135,13 @@ class VectorizedLayout():
         full_J_coords_steps = t_block_offsets[:,None] + step_J_coords[None]
         # We're resetting the horizontal offsets of all shared vars
         full_J_coords_steps += (value_offset, arg_offset)
-        full_J_coords_steps[:, self._J_shared, 1] = self._J_coords[self._J_shared, 1]
+        if self._J_shared.any():
+            full_J_coords_steps[:, self._J_shared, 1] = self._J_coords[self._J_shared, 1]
         full_J_coords = full_J_coords_steps.reshape((-1, 2))
 
         # TODO: Figure out J-mask and C offsets
-        self._J_MASK  = ((full_J_coords_steps[..., 1] >= self._J_shared.sum()) | self._J_shared) & (full_J_coords_steps[..., 0] >= 0)
-        self._J_MASK  = self._J_MASK.reshape((-1,))
+        self._J_MASK  = ((full_J_coords[..., 1] >= self._J_shared.sum()) | np.hstack([self._J_shared] * (len(full_J_coords) // len(self._J_shared)))) & (full_J_coords[..., 0] >= 0)
+        # self._J_MASK  = self._J_MASK.reshape((-1,))
         self._J_CACHE = np.empty((full_J_coords.shape[0], 3))
         self._J_CACHE[:, :2] = full_J_coords
         
@@ -346,8 +350,10 @@ class MacroLayout():
         self._components = updated_components
 
         bounds = {} if bounds is None else bounds
-        self._bounds = np.vstack(([bounds.get(s, [-default_bound, default_bound]) for s in self._shared_symbols if s in self._diff_symbols],
-                                  [bounds.get(s, [-default_bound, default_bound]) for s in self._series_symbols if s in self._diff_symbols] * self._n_series_steps))
+        self._bounds = np.array([bounds.get(s, [-default_bound, default_bound]) for s in self._series_symbols if s in self._diff_symbols] * self._n_series_steps)
+        if len(set(self._diff_symbols) & set(self._shared_symbols)) > 0:
+            self._bounds = np.vstack(([bounds.get(s, [-default_bound, default_bound]) for s in self._shared_symbols if s in self._diff_symbols], 
+                                      self._bounds))
 
         self._J_size = sum([c.J_size for c in self._components.values()])
         self._x_shape = (len(sorted_steps), series_width)
