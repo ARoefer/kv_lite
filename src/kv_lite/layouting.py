@@ -76,7 +76,9 @@ class VectorizedLayout():
             self._required_steps = sorted(set(self._step_reorder.flatten()))
             self._step_reorder -= self._step_reorder.min()
             J_coord_offsets = (0, relative_steps.min() * (len(diff_symbols) - len(shared_syms)))
-            
+            if (relative_steps[relative_steps != 0] >= -self._order).any():
+                raise ValueError(f'Stride overlaps with higher-order. This is not permitted.')
+
             # Generate the arguments needed for evaluation. We stack them from lowest to highest t.
             self._eval_args = gm.hstack([args[mask].set_stamp(stamp) for stamp, mask in vars_by_stamp_mask.items()])
             # We always lead with the shared arguments            
@@ -105,7 +107,7 @@ class VectorizedLayout():
             self._n_shared_syms  = 0
 
         self._unstamped_diff_symbols = {s.set_stamp(None) for s in self._syms_derivative}
-        self._width_step_derivative  = len(diff_symbols)
+        self._width_step_derivative  = len(self._unstamped_diff_symbols) - self._n_shared_diffs
         self._expr    = gm.VEval(expr.reshape((-1,)), self._eval_args)
 
         self._J_coords, self._J_sparse = expr.squeeze().jacobian(self._syms_derivative).reshape((-1, len(self._syms_derivative))).to_coo()
@@ -120,23 +122,30 @@ class VectorizedLayout():
         self.layout(value_offset, arg_offset)
 
     def layout(self, value_offset : int, arg_offset : int):
-        macro_block_offsets = np.asarray([(0, -x) for x in range(self._order + 1)])[::-1] * len(self._syms_derivative)
+        macro_block_offsets = np.asarray([(0, -x) for x in range(self._order + 1)])[::-1] * self._width_step_derivative #  - self._n_shared_diffs)
 
         # Coordinates of the Jacobian of an entire time step (E, J_W * (order+1))
         # Ordered t-o, t-o+1, ..., t
         step_J_coords = (macro_block_offsets[:,None] + self._J_coords[None]).reshape((-1, 2))
 
         t_block_offsets = np.asarray([(x * self._expr.shape[0],
-                                       x * (self._width_step_derivative - self._n_shared_diffs)) for x in range(len(self._t_steps))])
+                                       x * (self._width_step_derivative)) for x in range(len(self._t_steps))])
 
         full_J_coords_steps = t_block_offsets[:,None] + step_J_coords[None]
         # We're resetting the horizontal offsets of all shared vars
+        shared_mask = np.hstack([self._J_shared] * (self._order + 1))
         full_J_coords_steps += (value_offset, arg_offset)
-        full_J_coords_steps[:, self._J_shared, 1] = self._J_coords[self._J_shared, 1]
+        # Resetting the x locations of all shared symbols
+        full_J_coords_steps[:, shared_mask, 1] = np.hstack([self._J_coords[self._J_shared, 1]] * (self._order + 1))
         full_J_coords = full_J_coords_steps.reshape((-1, 2))
 
+        # We cannot have multiple connections of a shared var to a step,
+        # so we exclude the ones introduced by the higher-order estimates.
+        keep_shared_mask = shared_mask.copy()
+        keep_shared_mask[len(self._J_shared):] = False
+
         # TODO: Figure out J-mask and C offsets
-        self._J_MASK  = ((full_J_coords_steps[..., 1] >= self._J_shared.sum()) | self._J_shared) & (full_J_coords_steps[..., 0] >= 0)
+        self._J_MASK  = ((full_J_coords_steps[..., 1] >= self._J_shared.sum()) | keep_shared_mask) & (full_J_coords_steps[..., 0] >= 0)
         self._J_MASK  = self._J_MASK.reshape((-1,))
         self._J_CACHE = np.empty((full_J_coords.shape[0], 3))
         self._J_CACHE[:, :2] = full_J_coords
@@ -283,6 +292,10 @@ class VectorizedLayout():
                 self._J_DATA_VIEW[:, 2] = (3 / dt_cube) * J_temp[1:-2].reshape(s)
                 self._J_DATA_VIEW[:, 1] = (-3 / dt_cube) * J_temp[2:-1].reshape(s)
                 self._J_DATA_VIEW[:, 0] = J_temp[3:].reshape(s) / dt_cube
+
+        # Summing the step-wise impact of shared vars into the first slot.
+        if self._order > 0 and self._n_shared_diffs > 0:
+            self._J_DATA_VIEW[:, 0, :self._n_shared_diffs] = self._J_DATA_VIEW[:, :, :self._n_shared_diffs].sum(axis=1)
 
         if self._weights is not None:
             self._J_DATA_VIEW *= self._weights
