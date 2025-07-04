@@ -604,3 +604,6 @@ class RAI_NLPSolver():
 
     def report(self, x : np.ndarray) -> dict[str, np.ndarray]:
         return self._nlp.objectives_report(x)
+    
+    def set_pads(self, new_pads : np.ndarray):
+        self._nlp.set_pads(new_pads)
