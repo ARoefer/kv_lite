@@ -337,12 +337,16 @@ class MacroLayout():
 
         series_symbols = set()
         shared_symbols = set()
-        for n, c in components.items():
+        for x, (n, c) in enumerate(components.items()):
             series_symbols |= set(c.series_symbols)
             if c.shared_symbols is not None:
                 shared_symbols |= set(c.shared_symbols)
             if len(intersect:=(shared_symbols & series_symbols)) > 0:
-                raise ValueError(f'Processing {n} led to an overlap of series symbols and shared symbols: {intersect}')
+                conflicts = []
+                for n_p, c_p in list(components.items())[:x]:
+                    if len(set(c_p.series_symbols) & intersect) > 0:
+                        conflicts.append(n_p)
+                raise ValueError(f'Processing {n} led to an overlap of series symbols and shared symbols: {intersect}\n  These were identified as series symbols by: {", ".join(conflicts)}')
 
         self._new_symbol_order = gm.array(list(shared_symbols) + list(series_symbols))
         self._shared_symbols = self._new_symbol_order[:len(shared_symbols)]
