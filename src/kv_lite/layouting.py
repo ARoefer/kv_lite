@@ -54,6 +54,9 @@ class VectorizedLayout():
         self._required_steps = list(range(self._t_steps[0] - self._order, self._t_steps[0])) + self._t_steps
         self._series_symbols = args
         self._shared_symbols = None
+        self._n_shared_diffs = 0
+
+        # TODO: Add explicit marking of shared and series symbols
 
         stamps = {v.stamp for v in expr.symbols}
         if len(stamps) > 1:
@@ -67,8 +70,8 @@ class VectorizedLayout():
                 shared_syms = []
                 self._n_shared_syms = 0
 
-            min_stamp = min(stamps)
-            vars_by_stamp = {s - min_stamp: {v.set_stamp(None) for v in expr.symbols if v.stamp == s} for s in sorted(stamps) if s is not None}
+            max_stamp = max(stamps)
+            vars_by_stamp = {s - max_stamp: {v.set_stamp(None) for v in expr.symbols if v.stamp == s} for s in sorted(stamps) if s is not None}
             vars_by_stamp_mask = {s: [v in syms for v in args] for s, syms in vars_by_stamp.items()}
             self._step_mask = np.hstack(list(vars_by_stamp_mask.values()))
             relative_steps = np.asarray(list(vars_by_stamp_mask.keys()))
