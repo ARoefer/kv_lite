@@ -637,13 +637,17 @@ class RAI_NLPSolver():
                        init : np.ndarray=None):
         self._nlp = RAI_NLP(objectives, bounds, default_bound, constants, pads, init)
     
-    def solve(self, init_sample=None, constants=None, pads=None, stepMax=0.5, damping=1e-4, stopEvals=500, verbose=1) -> tuple[np.ndarray, np.ndarray, ry.SolverReturn]:
+    def solve(self, init_sample=None, constants=None, pads=None, stepMax=0.5, damping=1e-4, stopEvals=500, verbose=1, logging=False) -> tuple[np.ndarray, np.ndarray, ry.SolverReturn]:
         if pads is not None:
             self._nlp.set_pads(pads)
         if constants is not None:
             self._nlp.set_constants(constants)
         
-        self._nlp.reset_log()
+        if logging:
+            self._nlp.reset_log()
+        else:
+            self._nlp.deactivate_logging()
+
         solver = ry.NLP_Solver()
         solver.setPyProblem(self._nlp)
         solver.setSolver(ry.OptMethod.augmentedLag)
