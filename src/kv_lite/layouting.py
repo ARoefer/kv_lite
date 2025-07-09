@@ -32,7 +32,8 @@ class VectorizedLayout():
     """
     def __init__(self, expr : gm.KVArray,
                        t_steps : list[int],
-                       args : list[gm.KVSymbol],
+                       args_series : list[gm.KVSymbol],
+                       args_shared : list[gm.KVSymbol],
                        delta_t : float=1.0,
                        order : int=0,
                        weights : float | np.ndarray=None,
@@ -43,74 +44,70 @@ class VectorizedLayout():
         if order > 3:
             raise NotImplementedError(f'Currently only support order until 3. You gave {order}')
         
-        if type(args) not in {list, tuple, np.ndarray, gm.KVArray}:
-            raise ValueError(f'Arguments need to be provided as an ordered type. Type "{type(args)}" is unordered.')
+        if type(args_series) not in {list, tuple, np.ndarray, gm.KVArray}:
+            raise ValueError(f'Arguments need to be provided as an ordered type. Type "{type(args_series)}" is unordered.')
+        
+        if type(args_shared) not in {list, tuple, np.ndarray, gm.KVArray}:
+            raise ValueError(f'Arguments need to be provided as an ordered type. Type "{type(args_shared)}" is unordered.')
 
-        args = gm.array(args) if not isinstance(args, gm.KVArray) else args
+        args_shared = gm.array([s.set_stamp(None) for s in args_shared])
+        args_series = gm.array([s.set_stamp(None) for s in args_series])
+
+        if len(intersection:=set(args_shared) & set(args_series)) > 0:
+            raise ValueError(f'Intersection of shared args and series args {intersection}')
 
         self._original_diff_symbols = diff_symbols
+        diff_symbols = diff_symbols if diff_symbols is not None else set(args_shared) | set(args_series)
         self._t_steps = t_steps
         self._order   = order
         self._required_steps = list(range(self._t_steps[0] - self._order, self._t_steps[0])) + self._t_steps
-        self._series_symbols = args
-        self._shared_symbols = None
-        self._n_shared_diffs = 0
+        self._series_symbols = args_series
+        self._shared_symbols = args_shared
+        self._n_shared_syms  = len(self._shared_symbols)
+        self._n_shared_diffs = len(diff_symbols & set(self._shared_symbols))
 
         # TODO: Add explicit marking of shared and series symbols
+
+        stamped_symbols   = {s.set_stamp(None) for s in expr.symbols if s.stamp is not None}
+        unstamped_symbols = {s for s in expr.symbols if s.stamp is None}
+
+        if len(undefined:=stamped_symbols - set(self._series_symbols)) > 0:
+            raise ValueError(f'Some symbols in expression are stamped but not identified as series symbols: {undefined}')
+        
+        if len(undefined:=unstamped_symbols - set(self._series_symbols) - set(self._shared_symbols)) > 0:
+            raise ValueError(f'Some symbols in expression are unstamped but not identified as arguments: {undefined}')
 
         stamps = {v.stamp for v in expr.symbols}
         if len(stamps) > 1:
             if None in stamps:
-                shared_syms = {v for v in expr.symbols if v.stamp is None}
-                shared_mask = [v in shared_syms for v in args]
                 stamps.remove(None)
-                self._n_shared_syms = len(shared_syms)
-            else:
-                shared_mask = None
-                shared_syms = []
-                self._n_shared_syms = 0
 
             max_stamp = max(stamps)
-            vars_by_stamp = {s - max_stamp: {v.set_stamp(None) for v in expr.symbols if v.stamp == s} for s in sorted(stamps) if s is not None}
-            vars_by_stamp_mask = {s: [v in syms for v in args] for s, syms in vars_by_stamp.items()}
-            self._step_mask = np.hstack(list(vars_by_stamp_mask.values()))
-            relative_steps = np.asarray(list(vars_by_stamp_mask.keys()))
+            sorted_stamps = list(sorted(stamps))
+            relative_steps = np.asarray([s - max_stamp for s in sorted_stamps if s is not None])
             self._step_reorder = np.asarray(self._required_steps)[:,None] + relative_steps[None]
             self._required_steps = sorted(set(self._step_reorder.flatten()))
             self._step_reorder -= self._step_reorder.min()
-            J_coord_offsets = (0, relative_steps.min() * (len(diff_symbols) - len(shared_syms)))
+            J_coord_offsets = (0, relative_steps.min() * len(self._series_symbols))
             if (relative_steps[relative_steps != 0] >= -self._order).any():
                 raise ValueError(f'Stride overlaps with higher-order. This is not permitted.')
 
             # Generate the arguments needed for evaluation. We stack them from lowest to highest t.
-            self._eval_args = gm.hstack([args[mask].set_stamp(stamp) for stamp, mask in vars_by_stamp_mask.items()])
             # We always lead with the shared arguments            
-            if shared_mask is not None:
-                self._eval_args = gm.hstack((args[shared_mask], self._eval_args))
-                self._shared_symbols = args[shared_mask]
-                self._series_symbols = args[~np.asarray(shared_mask)]
-
+            self._eval_args = gm.hstack([self._shared_symbols] + [self._series_symbols.set_stamp(stamp) for stamp in sorted_stamps])
             if diff_symbols is None:
                 self._syms_derivative = self._eval_args
-                self._n_shared_diffs  = 0 if shared_mask is None else len(shared_syms)
             else:
-                self._syms_derivative = gm.hstack([gm.array([s.set_stamp(stamp) for s in args[mask] if s in diff_symbols]) for stamp, mask in vars_by_stamp_mask.items()])
-                if shared_mask is not None:
-                    self._n_shared_diffs = len(shared_syms & diff_symbols)
-                    # Also with the derivatives, we prepend them for the evaluation
-                    if self._n_shared_diffs > 0:
-                        self._syms_derivative = gm.hstack([gm.array([s for s in args[shared_mask] if s in diff_symbols]),
-                                                           self._syms_derivative])
+                self._syms_derivative = gm.hstack([s for s in self._shared_symbols if s in diff_symbols] + 
+                                                  sum([[s.set_stamp(stamp) for s in self._series_symbols if s in diff_symbols] for stamp in sorted_stamps], []))
         else:
             if next(iter(stamps)) is not None:
                 expr = expr.set_stamp(None)
 
             self._step_reorder = None
             J_coord_offsets = (0, 0)
-            self._eval_args = args
-            self._syms_derivative = args if diff_symbols is None else args[np.isin(args, list(diff_symbols))]
-            self._n_shared_diffs = 0
-            self._n_shared_syms  = 0
+            self._eval_args = gm.hstack([self._shared_symbols, self._series_symbols])
+            self._syms_derivative = self._eval_args if diff_symbols is None else self._eval_args[np.isin(self._eval_args, list(diff_symbols))]
 
         self._unstamped_diff_symbols = {s.set_stamp(None) for s in self._syms_derivative}
         self._width_step_derivative  = len(self._unstamped_diff_symbols) - self._n_shared_diffs
@@ -163,11 +160,13 @@ class VectorizedLayout():
                                                              len(self._J_coords) * self._J_CACHE.strides[0],
                                                              self._J_CACHE.strides[0]))
 
-    def reorder_symbols(self, new_order : list[gm.KVSymbol],
-                        value_offset : int=0, arg_offset : int=0) -> "VectorizedLayout":
+    def reorder_symbols(self, new_series_order : list[gm.KVSymbol],
+                              new_shared_order : list[gm.KVSymbol],
+                              value_offset : int=0, arg_offset : int=0) -> "VectorizedLayout":
         return VectorizedLayout(self._expr._e,
                                 self._t_steps,
-                                new_order,
+                                new_series_order,
+                                new_shared_order,
                                 self._delta_t,
                                 self._order,
                                 self._weights,
@@ -348,9 +347,8 @@ class MacroLayout():
                         conflicts.append(n_p)
                 raise ValueError(f'Processing {n} led to an overlap of series symbols and shared symbols: {intersect}\n  These were identified as series symbols by: {", ".join(conflicts)}')
 
-        self._new_symbol_order = gm.array(list(shared_symbols) + list(series_symbols))
-        self._shared_symbols = self._new_symbol_order[:len(shared_symbols)]
-        self._series_symbols = self._new_symbol_order[len(shared_symbols):]
+        self._shared_symbols = list(shared_symbols)
+        self._series_symbols = list(series_symbols)
         self._diff_symbols   = frozenset(sum([list(c.diff_symbols) for c in self._components.values()], []))
         updated_components = {}
 
@@ -360,7 +358,8 @@ class MacroLayout():
         self._component_J_offsets     = [0]
         for (n, c), arg_offset in zip(self._components.items(), component_arg_offsets):
             # Apply layout
-            updated_components[n] = c.reorder_symbols(self._new_symbol_order,
+            updated_components[n] = c.reorder_symbols(self._series_symbols,
+                                                      self._shared_symbols,
                                                       self._component_value_offsets[-1],
                                                       arg_offset)
             self._component_value_offsets.append(self._component_value_offsets[-1] + c.dim)
