@@ -324,7 +324,7 @@ class KVSymbol(KVExpr):
             full_name = f'{prefix}__{full_name}'
         
         if stamp is not None:
-            if not isinstance(stamp, int):
+            if not np.issubdtype(type(stamp), np.integer):
                 raise ValueError(f'Stamps are expected to be integers. Given stamp "{stamp}" is a "{type(stamp)}".')
 
             full_name = f'{full_name}__t{stamp}'
