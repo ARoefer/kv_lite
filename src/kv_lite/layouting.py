@@ -211,6 +211,14 @@ class VectorizedLayout():
     def J_size(self) -> int:
         return self._J_MASK.sum()
 
+    @cached_property
+    def pad_size(self) -> tuple[int, int]:
+        return (self._pad_steps, len(self.series_symbols))
+
+    @property
+    def t_steps(self) -> list[int]:
+        return self._t_steps
+
     def eval_expr(self, series : np.ndarray, shared : np.ndarray=None, series_pad_values : np.ndarray=None) -> np.ndarray:
         return self._eval_expr(self._make_M(series, shared, series_pad_values))
 
@@ -353,7 +361,7 @@ class MacroLayout():
         updated_components = {}
 
         series_width = len(self.active_series_symbols)
-        component_arg_offsets   = [min(c.required_steps) * series_width for c in self._components.values()]
+        component_arg_offsets   = [min(c.t_steps) * series_width for c in self._components.values()]
         self._component_value_offsets = [0]
         self._component_J_offsets     = [0]
         for (n, c), arg_offset in zip(self._components.items(), component_arg_offsets):
@@ -362,8 +370,8 @@ class MacroLayout():
                                                       self._shared_symbols,
                                                       self._component_value_offsets[-1],
                                                       arg_offset)
-            self._component_value_offsets.append(self._component_value_offsets[-1] + c.dim)
-            self._component_J_offsets.append(self._component_J_offsets[-1] + c.J_size)
+            self._component_value_offsets.append(self._component_value_offsets[-1] + updated_components[n].dim)
+            self._component_J_offsets.append(self._component_J_offsets[-1] + updated_components[n].J_size)
         del self._component_value_offsets[-1]
         del self._component_J_offsets[-1]
         self._components = updated_components
@@ -384,6 +392,10 @@ class MacroLayout():
     @cached_property
     def diff_mask(self) -> np.ndarray:
         return np.hstack(([s in self._diff_symbols for s in self._shared_symbols] + self._n_series_steps * [s in self._diff_symbols for s in self._series_symbols]))
+
+    @cached_property
+    def diff_symbols(self) -> gm.KVArray:
+        return self.in_symbols[self.diff_mask]
 
     @property
     def active_symbols(self) -> frozenset[gm.KVSymbol]:
@@ -417,6 +429,14 @@ class MacroLayout():
     def out_dim(self) -> int:
         return sum([c.dim for c in self._components.values()])
 
+    @cached_property
+    def in_symbols(self) -> gm.KVArray:
+        return gm.hstack([self.shared_symbols] + [self.series_symbols] * self.n_series_steps)
+
+    @cached_property
+    def pad_size(self) -> tuple[int, int]:
+        return np.vstack([c.pad_size for c in self._components.values()]).max(axis=0)
+
     def _make_M_and_S(self, x : np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         return x[:len(self._shared_symbols)], x[len(self._shared_symbols):].reshape((-1, len(self._series_symbols)))
 
@@ -434,7 +454,7 @@ class MacroLayout():
         if out_J[:,:2].min() < 0:
             raise ValueError(f'Sparse Jacobian coordinates are less than 0.')
         
-        if ((self.out_dim, self.in_dim) - out_J[:,:2].max(axis=0) < 1).any():
+        if ((self.out_dim, self.diff_mask.sum()) - out_J[:,:2].max(axis=0) < 1).any():
             raise ValueError(f'Sparse Jacobian coordinates are out of limits. Limit: {self.out_dim - 1, self.in_dim - 1}, Given: {out_J[:,:2].max(axis=0)}.')
         return out_expr, out_J
 
@@ -503,6 +523,9 @@ class RAI_NLP(nlp.NLP):
                 raise ValueError(f'Expected {(~self._layout.diff_mask).sum()} constant values.')
             self._X_CACHE[~self._layout.diff_mask] = constants
 
+        self._logging_active = False
+        self._log = None
+
     @property
     def active_symbols(self) -> frozenset[gm.KVSymbol]:
         return self._layout.active_symbols
@@ -527,18 +550,51 @@ class RAI_NLP(nlp.NLP):
     def n_series_steps(self) -> int:
         return self._layout.n_series_steps
 
-    def set_init(self, new_init : np.ndarray):
-        self._init = new_init
+    def deactivate_logging(self):
+        self._logging_active = False
 
-    def set_constants(self, new_constants : np.ndarray):
-        self._X_CACHE[~self._layout.diff_mask] = new_constants
+    def reset_log(self):
+        self._logging_active = True
+        self._log = None
+
+    @property
+    def log(self) -> dict[str, np.ndarray]:
+        return self._log
+
+    def set_init(self, new_init : np.ndarray | dict[gm.KVSymbol, float | np.ndarray]):
+        if isinstance(new_init, dict):
+            self._init = self._init if self._init is not None else np.zeros(self.getDimension())
+            for s, v in new_init.items():
+                self._init[np.isin(self._layout.diff_symbols, [s])] = v
+        else:
+            self._init = new_init
+
+    def set_constants(self, new_constants : np.ndarray | dict[gm.KVSymbol, float | np.ndarray]):
+        if isinstance(new_constants, dict):
+            for s, v in new_constants.items():
+                self._X_CACHE[np.isin(self._layout.in_symbols, [s]) & (~self._layout.diff_mask)] = v
+        else:
+            self._X_CACHE[~self._layout.diff_mask] = new_constants
     
-    def set_pads(self, new_pads : np.ndarray):
-        self._pads = new_pads
+    def set_pads(self, new_pads : np.ndarray | dict[gm.KVSymbol, float | np.ndarray]):
+        if isinstance(new_pads, dict):
+            self._pads = self._pads if self._pads is not None else np.zeros(self._layout.pad_size)
+            for s, v in new_pads.items():
+                self._pads.T[np.isin(self._layout.series_symbols, [s])] = v
+        else:
+            self._pads = new_pads
 
     def evaluate(self, x: np.ndarray):
         self._X_CACHE[self._layout.diff_mask] = x
-        return self._layout.eval_all(self._X_CACHE, self._pads)
+        phi, J = self._layout.eval_all(self._X_CACHE, self._pads)
+        if self._logging_active:
+            log = self._layout.report(self._X_CACHE)
+            if self._log is None:
+                self._log = log
+            else:
+                for k, v in log.items():
+                    self._log[k] = np.vstack((self._log[k], v))
+        return phi, J
     
     def objectives_report(self, x : np.ndarray) -> dict[str, np.ndarray]:
         x_copy = self._X_CACHE.copy()
@@ -581,15 +637,19 @@ class RAI_NLPSolver():
                        init : np.ndarray=None):
         self._nlp = RAI_NLP(objectives, bounds, default_bound, constants, pads, init)
     
-    def solve(self, init_sample=None, pads=None, stepMax=0.5, damping=1e-4, stopEvals=500) -> tuple[np.ndarray, np.ndarray, ry.SolverReturn]:
+    def solve(self, init_sample=None, constants=None, pads=None, stepMax=0.5, damping=1e-4, stopEvals=500, verbose=1) -> tuple[np.ndarray, np.ndarray, ry.SolverReturn]:
         if pads is not None:
             self._nlp.set_pads(pads)
+        if constants is not None:
+            self._nlp.set_constants(constants)
+        
+        self._nlp.reset_log()
         solver = ry.NLP_Solver()
         solver.setPyProblem(self._nlp)
         solver.setSolver(ry.OptMethod.augmentedLag)
         solver.setInitialization(init_sample)
-        solver.setOptions(stepMax=stepMax, damping=damping, stopEvals=stopEvals)
-        solver_return = solver.solve(0, 0)
+        solver.setOptions(stepMax=stepMax, damping=damping, stopEvals=stopEvals, verbose=verbose)
+        solver_return = solver.solve(0, verbose=verbose)
 
         return self._nlp.make_full_solution(solver_return.x) + (solver_return,)
 
@@ -606,3 +666,7 @@ class RAI_NLPSolver():
     
     def set_pads(self, new_pads : np.ndarray):
         self._nlp.set_pads(new_pads)
+
+    @property
+    def bounds(self) -> np.ndarray:
+        return self._nlp.getBounds()
