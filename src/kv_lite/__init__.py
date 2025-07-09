@@ -1,6 +1,7 @@
 from . import spatial    as gm
 from . import urdf_utils as urdf
 from . import exp_utils  as exp
+from . import splines
 
 try:
     from . import ros_utils as ros
