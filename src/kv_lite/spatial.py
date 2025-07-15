@@ -36,7 +36,9 @@ from .math import KVExpr, \
                   array,  \
                   asarray, \
                   diag,   \
+                  diag_view, \
                   eye,   \
+                  batched_eye, \
                   ones,  \
                   zeros, \
                   tri, \
@@ -59,20 +61,18 @@ unitX = vector3(1, 0, 0)
 unitY = vector3(0, 1, 0)
 unitZ = vector3(0, 0, 1)
 
-def norm(a):
-    rt = sqrt((a**2).sum())
-    if isinstance(rt, np.ndarray):
-        return rt.item()
+def norm(a, axis=None):
+    rt = sqrt((a**2).sum(axis=axis))
     return rt
 
 def cross(u, v):
     """Computes the cross product between two vectors."""
-    u = np.squeeze(u)
-    v = np.squeeze(v)
+    # u = np.squeeze(u)
+    # v = np.squeeze(v)
 
-    return KVArray([[u[1] * v[2] - u[2] * v[1],
-                     u[2] * v[0] - u[0] * v[2],
-                     u[0] * v[1] - u[1] * v[0], 0]]).T
+    return KVArray([[u[..., 1] * v[..., 2] - u[..., 2] * v[..., 1],
+                     u[..., 2] * v[..., 0] - u[..., 0] * v[..., 2],
+                     u[..., 0] * v[..., 1] - u[..., 1] * v[..., 0], 0]]).T
 
 def rotation_vector_from_matrix(rotation_matrix):
     rm = rotation_matrix

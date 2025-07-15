@@ -678,11 +678,11 @@ def diag(v, k=0):
 def eye(N, M=None, k=0):
     return KVArray(np.eye(N, M, k))
 
-def ones(shape):
-    return KVArray(np.ones(shape))
+def ones(shape, **kwargs):
+    return KVArray(np.ones(shape, **kwargs))
 
-def zeros(shape):
-    return KVArray(np.zeros(shape))
+def zeros(shape, **kwargs):
+    return KVArray(np.zeros(shape, **kwargs))
 
 def tri(N, M=None, k=0):
     return KVArray(np.tri(N, M=M, k=k))
@@ -696,7 +696,27 @@ def vstack(tup):
 def stack(arrays, axis):
     return KVArray(np.stack(arrays, axis))
 
+def diag_view(a, writeable=False):
+    """Presents a view of the diagonal of an array.
+       Given an array of (*, N, N) will return a view (*, N).
+       By default this view is read only.
+    """
+    if a.shape[-1] != a.shape[-2]:
+        raise ValueError(f'Diag view requires the last dimensions to be square. But we got: {a.shape}')
+    return np.lib.stride_tricks.as_strided(a,
+                                           a.shape[:-1],
+                                           a.strides[:-2] + (sum(a.strides[-2:]),),
+                                           writeable=writeable)
+
 trace = np.trace
+
+# Gratitude goes to Nick Heppert for his casion library where this was taken from.
+# Check out casion: https://github.com/SuperN1ck/casino
+def batched_eye(B: Tuple[int], N: int, **kwargs):
+    out = zeros(B + (N, N))
+    dv  = diag_view(out, writeable=True)
+    dv[..., :] = 1
+    return out
 
 def wrap_array(f):
     def g(v):
