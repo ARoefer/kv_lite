@@ -4,7 +4,7 @@ from . import spatial as kv
 
 
 def _skew(v : kv.KVArray) -> kv.KVArray:
-    dtype = float if not v.is_symbolic else object
+    dtype = float if not isinstance(v, kv.KVArray) or not v.is_symbolic else object
     out = kv.zeros((3, 3), dtype=dtype) if v.ndim == 1 else kv.zeros(v.shape[:-1] + (3, 3), dtype=dtype)
     out[..., 0, 1] = -v[..., 2]
     out[..., 0, 2] =  v[..., 1]
