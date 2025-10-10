@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kineverse"
+version = "2025.10.10"
+authors = [
+  { name="Adrian Röfer", email="aroefer@cs.uni-freiburg.de" },
+]
+description = "Differentiable Kinematics Using Numpy and Casadi."
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "	GPL-3.0-or-later"
+license-files = ["LICEN[CS]E*"]
+dependencies = [
+  "numpy>=1.26.4",
+  "casadi",
+  "networkx"
+]
+
+[project.optional-dependencies]
+ros = ["jinja2", "scipy>=1.14.0"]
+vis = ["pyvis"]
+rai = ["robotic"]
+
+[project.urls]
+Homepage = "https://github.com/ARoefer/kv_lite"
+Issues = "https://github.com/ARoefer/kv_lite/issues"
+

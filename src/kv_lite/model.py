@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, \
+                        field
 from typing      import Iterable, \
                         Union
 
@@ -127,8 +128,8 @@ class Inertial:
 class Geometry:
     type      : str
     mesh_path : str
-    dim_scale : gm.KVArray = gm.vector3(1, 1, 1)
-    origin    : gm.KVArray = gm.Transform.identity()
+    dim_scale : gm.KVArray = field(default_factory=lambda: gm.vector3(1, 1, 1))
+    origin    : gm.KVArray = field(default_factory=gm.Transform.identity)
 
 
 class Body(Frame):

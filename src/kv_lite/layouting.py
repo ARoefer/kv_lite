@@ -496,181 +496,192 @@ class MacroLayout():
             out_d[cn] = out_x[offset:offset+c.dim].reshape((len(c._t_steps), -1))
         return out_d
 
+try:
+    import robotic as ry
+    from robotic import nlp
+    SolverObjectives = ry.OT
 
-import robotic as ry
-from robotic import nlp
-SolverObjectives = ry.OT
+    class RAI_NLP(nlp.NLP):
+        def __init__(self, objectives : dict[str, tuple[ry.OT, VectorizedLayout]],
+                        bounds : dict[gm.KVSymbol, tuple[float, float]],
+                        default_bound=1e6,
+                        constants : np.ndarray=None,
+                        pads : np.ndarray=None,
+                        init : np.ndarray=None):
+            self._pads = pads
+            self._init = init
 
-class RAI_NLP(nlp.NLP):
-    def __init__(self, objectives : dict[str, tuple[ry.OT, VectorizedLayout]],
-                       bounds : dict[gm.KVSymbol, tuple[float, float]],
-                       default_bound=1e6,
-                       constants : np.ndarray=None,
-                       pads : np.ndarray=None,
-                       init : np.ndarray=None):
-        self._pads = pads
-        self._init = init
+            self._layout = MacroLayout({n: v for n, (_, v) in objectives.items()},
+                                    bounds,
+                                    default_bound)
+            
+            self._features = sum([[o] * v.dim for o, v in objectives.values()], [])
 
-        self._layout = MacroLayout({n: v for n, (_, v) in objectives.items()},
-                                   bounds,
-                                   default_bound)
+            self._X_CACHE = np.empty(self._layout.in_dim)
+            if not self._layout.diff_mask.all():
+                if constants is None:
+                    raise ValueError(f'Expected {(~self._layout.diff_mask).sum()} constant values.')
+                self._X_CACHE[~self._layout.diff_mask] = constants
+
+            self._logging_active = False
+            self._log = None
+
+        @property
+        def active_symbols(self) -> frozenset[gm.KVSymbol]:
+            return self._layout.active_symbols
+
+        @property
+        def active_shared_symbols(self) -> frozenset[gm.KVSymbol]:
+            return self._layout.active_shared_symbols
+
+        @property
+        def active_series_symbols(self) -> frozenset[gm.KVSymbol]:
+            return self._layout.active_series_symbols
+
+        @property
+        def series_symbols(self) -> gm.KVArray:
+            return self._layout.series_symbols
         
-        self._features = sum([[o] * v.dim for o, v in objectives.values()], [])
+        @property
+        def shared_symbols(self) -> gm.KVArray:
+            return self._layout.shared_symbols
 
-        self._X_CACHE = np.empty(self._layout.in_dim)
-        if not self._layout.diff_mask.all():
-            if constants is None:
-                raise ValueError(f'Expected {(~self._layout.diff_mask).sum()} constant values.')
-            self._X_CACHE[~self._layout.diff_mask] = constants
+        @property
+        def n_series_steps(self) -> int:
+            return self._layout.n_series_steps
 
-        self._logging_active = False
-        self._log = None
+        def deactivate_logging(self):
+            self._logging_active = False
 
-    @property
-    def active_symbols(self) -> frozenset[gm.KVSymbol]:
-        return self._layout.active_symbols
+        def reset_log(self):
+            self._logging_active = True
+            self._log = None
 
-    @property
-    def active_shared_symbols(self) -> frozenset[gm.KVSymbol]:
-        return self._layout.active_shared_symbols
+        @property
+        def log(self) -> dict[str, np.ndarray]:
+            return self._log
 
-    @property
-    def active_series_symbols(self) -> frozenset[gm.KVSymbol]:
-        return self._layout.active_series_symbols
-
-    @property
-    def series_symbols(self) -> gm.KVArray:
-        return self._layout.series_symbols
-    
-    @property
-    def shared_symbols(self) -> gm.KVArray:
-        return self._layout.shared_symbols
-
-    @property
-    def n_series_steps(self) -> int:
-        return self._layout.n_series_steps
-
-    def deactivate_logging(self):
-        self._logging_active = False
-
-    def reset_log(self):
-        self._logging_active = True
-        self._log = None
-
-    @property
-    def log(self) -> dict[str, np.ndarray]:
-        return self._log
-
-    def set_init(self, new_init : np.ndarray | dict[gm.KVSymbol, float | np.ndarray]):
-        if isinstance(new_init, dict):
-            self._init = self._init if self._init is not None else np.zeros(self.getDimension())
-            for s, v in new_init.items():
-                self._init[np.isin(self._layout.diff_symbols, [s])] = v
-        else:
-            self._init = new_init
-
-    def set_constants(self, new_constants : np.ndarray | dict[gm.KVSymbol, float | np.ndarray]):
-        if isinstance(new_constants, dict):
-            for s, v in new_constants.items():
-                self._X_CACHE[np.isin(self._layout.in_symbols, [s]) & (~self._layout.diff_mask)] = v
-        else:
-            self._X_CACHE[~self._layout.diff_mask] = new_constants
-    
-    def set_pads(self, new_pads : np.ndarray | dict[gm.KVSymbol, float | np.ndarray]):
-        if isinstance(new_pads, dict):
-            self._pads = self._pads if self._pads is not None else np.zeros(self._layout.pad_size)
-            for s, v in new_pads.items():
-                self._pads.T[np.isin(self._layout.series_symbols, [s])] = v
-        else:
-            self._pads = new_pads
-
-    def evaluate(self, x: np.ndarray):
-        self._X_CACHE[self._layout.diff_mask] = x
-        phi, J = self._layout.eval_all(self._X_CACHE, self._pads)
-        if self._logging_active:
-            log = self._layout.report(self._X_CACHE)
-            if self._log is None:
-                self._log = log
+        def set_init(self, new_init : np.ndarray | dict[gm.KVSymbol, float | np.ndarray]):
+            if isinstance(new_init, dict):
+                self._init = self._init if self._init is not None else np.zeros(self.getDimension())
+                for s, v in new_init.items():
+                    self._init[np.isin(self._layout.diff_symbols, [s])] = v
             else:
-                for k, v in log.items():
-                    self._log[k] = np.vstack((self._log[k], v))
-        return phi, J
-    
-    def objectives_report(self, x : np.ndarray) -> dict[str, np.ndarray]:
-        x_copy = self._X_CACHE.copy()
-        x_copy[self._layout.diff_mask] = x
-        return self._layout.report(x_copy)
+                self._init = new_init
 
-    def f(self, x: np.ndarray):
-        raise NotImplementedError()
-
-    def getFHessian(self, x):
-        return []
-
-    def getDimension(self) -> int:
-        return self._layout.diff_mask.sum()
-
-    def getFeatureTypes(self):
-        return self._features
-
-    def getInitializationSample(self):
-        raise self._init
-
-    def getBounds(self):
-        return self._layout.bounds.T
-
-    def report(self, verbose):
-        return "RAI NLP Layout"
-
-    def make_full_solution(self, x : np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        x_copy = self._X_CACHE.copy()
-        x_copy[self._layout.diff_mask] = x
-        return x_copy[:len(self._layout.shared_symbols)], x_copy[len(self._layout.shared_symbols):].reshape((-1, len(self._layout.series_symbols)))
-
-
-class RAI_NLPSolver():
-    def __init__(self, objectives : dict[str, tuple[ry.OT, VectorizedLayout]],
-                       bounds : dict[gm.KVSymbol, tuple[float, float]]=None,
-                       default_bound=1e6,
-                       constants : np.ndarray=None,
-                       pads : np.ndarray=None,
-                       init : np.ndarray=None):
-        self._nlp = RAI_NLP(objectives, bounds, default_bound, constants, pads, init)
-    
-    def solve(self, init_sample=None, constants=None, pads=None, stepMax=0.5, damping=1e-4, stopEvals=500, verbose=1, logging=False) -> tuple[np.ndarray, np.ndarray, ry.SolverReturn]:
-        if pads is not None:
-            self._nlp.set_pads(pads)
-        if constants is not None:
-            self._nlp.set_constants(constants)
+        def set_constants(self, new_constants : np.ndarray | dict[gm.KVSymbol, float | np.ndarray]):
+            if isinstance(new_constants, dict):
+                for s, v in new_constants.items():
+                    self._X_CACHE[np.isin(self._layout.in_symbols, [s]) & (~self._layout.diff_mask)] = v
+            else:
+                self._X_CACHE[~self._layout.diff_mask] = new_constants
         
-        if logging:
-            self._nlp.reset_log()
-        else:
-            self._nlp.deactivate_logging()
+        def set_pads(self, new_pads : np.ndarray | dict[gm.KVSymbol, float | np.ndarray]):
+            if isinstance(new_pads, dict):
+                self._pads = self._pads if self._pads is not None else np.zeros(self._layout.pad_size)
+                for s, v in new_pads.items():
+                    self._pads.T[np.isin(self._layout.series_symbols, [s])] = v
+            else:
+                self._pads = new_pads
 
-        solver = ry.NLP_Solver()
-        solver.setPyProblem(self._nlp)
-        solver.setSolver(ry.OptMethod.augmentedLag)
-        solver.setInitialization(init_sample)
-        solver.setOptions(stepMax=stepMax, damping=damping, stopEvals=stopEvals, verbose=verbose)
-        solver_return = solver.solve(0, verbose=verbose)
+        def evaluate(self, x: np.ndarray):
+            self._X_CACHE[self._layout.diff_mask] = x
+            phi, J = self._layout.eval_all(self._X_CACHE, self._pads)
+            if self._logging_active:
+                log = self._layout.report(self._X_CACHE)
+                if self._log is None:
+                    self._log = log
+                else:
+                    for k, v in log.items():
+                        self._log[k] = np.vstack((self._log[k], v))
+            return phi, J
+        
+        def objectives_report(self, x : np.ndarray) -> dict[str, np.ndarray]:
+            x_copy = self._X_CACHE.copy()
+            x_copy[self._layout.diff_mask] = x
+            return self._layout.report(x_copy)
 
-        return self._nlp.make_full_solution(solver_return.x) + (solver_return,)
+        def f(self, x: np.ndarray):
+            raise NotImplementedError()
 
-    @property
-    def series_symbols(self) -> gm.KVArray:
-        return self._nlp.series_symbols
+        def getFHessian(self, x):
+            return []
+
+        def getDimension(self) -> int:
+            return self._layout.diff_mask.sum()
+
+        def getFeatureTypes(self):
+            return self._features
+
+        def getInitializationSample(self):
+            raise self._init
+
+        def getBounds(self):
+            return self._layout.bounds.T
+
+        def report(self, verbose):
+            return "RAI NLP Layout"
+
+        def make_full_solution(self, x : np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+            x_copy = self._X_CACHE.copy()
+            x_copy[self._layout.diff_mask] = x
+            return x_copy[:len(self._layout.shared_symbols)], x_copy[len(self._layout.shared_symbols):].reshape((-1, len(self._layout.series_symbols)))
+
+
+    class RAI_NLPSolver():
+        def __init__(self, objectives : dict[str, tuple[ry.OT, VectorizedLayout]],
+                        bounds : dict[gm.KVSymbol, tuple[float, float]]=None,
+                        default_bound=1e6,
+                        constants : np.ndarray=None,
+                        pads : np.ndarray=None,
+                        init : np.ndarray=None):
+            self._nlp = RAI_NLP(objectives, bounds, default_bound, constants, pads, init)
+        
+        def solve(self, init_sample=None, constants=None, pads=None, stepMax=0.5, damping=1e-4, stopEvals=500, verbose=1, logging=False) -> tuple[np.ndarray, np.ndarray, ry.SolverReturn]:
+            if pads is not None:
+                self._nlp.set_pads(pads)
+            if constants is not None:
+                self._nlp.set_constants(constants)
+            
+            if logging:
+                self._nlp.reset_log()
+            else:
+                self._nlp.deactivate_logging()
+
+            solver = ry.NLP_Solver()
+            solver.setPyProblem(self._nlp)
+            solver.setSolver(ry.OptMethod.augmentedLag)
+            solver.setInitialization(init_sample)
+            solver.setOptions(stepMax=stepMax, damping=damping, stopEvals=stopEvals, verbose=verbose)
+            solver_return = solver.solve(0, verbose=verbose)
+
+            return self._nlp.make_full_solution(solver_return.x) + (solver_return,)
+
+        @property
+        def series_symbols(self) -> gm.KVArray:
+            return self._nlp.series_symbols
+        
+        @property
+        def shared_symbols(self) -> gm.KVArray:
+            return self._nlp.shared_symbols
+
+        def report(self, x : np.ndarray) -> dict[str, np.ndarray]:
+            return self._nlp.objectives_report(x)
+        
+        def set_pads(self, new_pads : np.ndarray):
+            self._nlp.set_pads(new_pads)
+
+        @property
+        def bounds(self) -> np.ndarray:
+            return self._nlp.getBounds()
+
+except (ModuleNotFoundError, ImportError) as e:
+    class RAI_NLP():
+        def __init__(self, *args, **kwargs):
+            raise NotImplementedError(f'Cannot use RAI because you are missing dependencies. Use "pip install kineverse[rai]" to install them. Original exception: {e}')
     
-    @property
-    def shared_symbols(self) -> gm.KVArray:
-        return self._nlp.shared_symbols
+    class RAI_NLPSolver():
+        def __init__(self, *args, **kwargs):
+            raise NotImplementedError(f'Cannot use RAI because you are missing dependencies. Use "pip install kineverse[rai]" to install them. Original exception: {e}')
 
-    def report(self, x : np.ndarray) -> dict[str, np.ndarray]:
-        return self._nlp.objectives_report(x)
-    
-    def set_pads(self, new_pads : np.ndarray):
-        self._nlp.set_pads(new_pads)
-
-    @property
-    def bounds(self) -> np.ndarray:
-        return self._nlp.getBounds()
+    SolverObjectives = None
