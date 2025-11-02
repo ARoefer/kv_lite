@@ -580,282 +580,383 @@ class MacroLayout():
             out_d[cn] = out_x[offset:offset+c.dim].reshape((len(c._t_steps), -1))
         return out_d
 
+try:
+    import robotic as ry
+    from robotic import nlp
+    SolverObjectives = ry.OT
 
-import robotic as ry
-from robotic import nlp
-SolverObjectives = ry.OT
 
-
-class RAI_NLP(nlp.NLP):
-    """Low-level bridge to the NLP solver interface of ry/rai/komo.
-    """
-    def __init__(self, objectives : dict[str, tuple[ry.OT, VectorizedLayout]],
-                       bounds : dict[gm.KVSymbol, tuple[float, float]],
-                       default_bound=1e6,
-                       constants : np.ndarray | dict[gm.KVSymbol, float | np.ndarray]=None,
-                       pads : np.ndarray | dict[gm.KVSymbol, float]=None,
-                       init : np.ndarray | dict[gm.KVSymbol, float]=None):
-        """Instantiates a new NLP problem. Objectives are given as named layouts
-           accompanied by the objective type. If the layouts do not differentiate
-           fully against all their variables, then this interface requires a value
-           assignment for these constant values. This can be overriden later as well.
-
-        Args:
-            objectives (dict[str, tuple[ry.OT, VectorizedLayout]]): Objectives given as Layouts and objective type.
-            bounds (dict[gm.KVSymbol, tuple[float, float]]): Bounds for optimization variables.
-            default_bound (float, optional): Default bound which is applied to all variables
-                                             that do not have a custom one. Defaults to 1e6.
-            constants (np.ndarray | dict[gm.KVSymbol, float | np.ndarray], optional): Value of variables that are constants. Defaults to None.
-            pads (np.ndarray | dict[gm.KVSymbol, float], optional): Padding values for the time series. Defaults to None.
-            init (np.ndarray | dict[gm.KVSymbol, float], optional): Initial value to propose to the solver if it asks. Defaults to None.
+    class RAI_NLP(nlp.NLP):
+        """Low-level bridge to the NLP solver interface of ry/rai/komo.
         """
+        def __init__(self, objectives : dict[str, tuple[ry.OT, VectorizedLayout]],
+                        bounds : dict[gm.KVSymbol, tuple[float, float]],
+                        default_bound=1e6,
+                        constants : np.ndarray | dict[gm.KVSymbol, float | np.ndarray]=None,
+                        pads : np.ndarray | dict[gm.KVSymbol, float]=None,
+                        init : np.ndarray | dict[gm.KVSymbol, float]=None):
+            """Instantiates a new NLP problem. Objectives are given as named layouts
+            accompanied by the objective type. If the layouts do not differentiate
+            fully against all their variables, then this interface requires a value
+            assignment for these constant values. This can be overriden later as well.
 
-        self._layout = MacroLayout({n: v for n, (_, v) in objectives.items()},
-                                   bounds,
-                                   default_bound)
+            Args:
+                objectives (dict[str, tuple[ry.OT, VectorizedLayout]]): Objectives given as Layouts and objective type.
+                bounds (dict[gm.KVSymbol, tuple[float, float]]): Bounds for optimization variables.
+                default_bound (float, optional): Default bound which is applied to all variables
+                                                that do not have a custom one. Defaults to 1e6.
+                constants (np.ndarray | dict[gm.KVSymbol, float | np.ndarray], optional): Value of variables that are constants. Defaults to None.
+                pads (np.ndarray | dict[gm.KVSymbol, float], optional): Padding values for the time series. Defaults to None.
+                init (np.ndarray | dict[gm.KVSymbol, float], optional): Initial value to propose to the solver if it asks. Defaults to None.
+            """
+            self._layout = MacroLayout({n: v for n, (_, v) in objectives.items()},
+                                        bounds,
+                                        default_bound)
+            
+            self._features = sum([[o] * v.dim for o, v in objectives.values()], [])
+
+            self._X_CACHE = np.empty(self._layout.in_dim)
+            if not self._layout.diff_mask.all():
+                if constants is None:
+                    raise ValueError(f'Expected {(~self._layout.diff_mask).sum()} constant values.')
+                self.set_constants(constants)
+
+            self._logging_active = False
+            self._log = None
+            
+            self._pads = None
+            if pads is not None:
+                self.set_pads(pads)
+            
+            self._init = None
+            if init is not None:
+                self.set_init(init)
+
+        @property
+        def active_symbols(self) -> frozenset[gm.KVSymbol]:
+            return self._layout.active_symbols
+
+        @property
+        def active_shared_symbols(self) -> frozenset[gm.KVSymbol]:
+            return self._layout.active_shared_symbols
+
+        @property
+        def active_series_symbols(self) -> frozenset[gm.KVSymbol]:
+            return self._layout.active_series_symbols
+
+        @property
+        def series_symbols(self) -> gm.KVArray:
+            return self._layout.series_symbols
         
-        self._features = sum([[o] * v.dim for o, v in objectives.values()], [])
+        @property
+        def shared_symbols(self) -> gm.KVArray:
+            return self._layout.shared_symbols
 
-        self._X_CACHE = np.empty(self._layout.in_dim)
-        if not self._layout.diff_mask.all():
-            if constants is None:
-                raise ValueError(f'Expected {(~self._layout.diff_mask).sum()} constant values.')
-            self.set_constants(constants)
+        @property
+        def active_symbols(self) -> frozenset[gm.KVSymbol]:
+            """Symbols that are being optimized."""
+            return self._layout.active_symbols
 
-        self._logging_active = False
-        self._log = None
+        @property
+        def active_shared_symbols(self) -> frozenset[gm.KVSymbol]:
+            """Symbols that are being optimized and shared across time steps."""
+            return self._layout.active_shared_symbols
+
+        @property
+        def active_series_symbols(self) -> frozenset[gm.KVSymbol]:
+            """Symbols that are being optimized and identify a time step."""
+            return self._layout.active_series_symbols
+
+        @property
+        def series_symbols(self) -> gm.KVArray:
+            """All symbols of the time series."""
+            return self._layout.series_symbols
         
-        self._pads = None
-        if pads is not None:
-            self.set_pads(pads)
-        
-        self._init = None
-        if init is not None:
-            self.set_init(init)
+        @property
+        def shared_symbols(self) -> gm.KVArray:
+            """All symbols shared across time steps."""
+            return self._layout.shared_symbols
 
-    @property
-    def active_symbols(self) -> frozenset[gm.KVSymbol]:
-        """Symbols that are being optimized."""
-        return self._layout.active_symbols
+        @property
+        def n_series_steps(self) -> int:
+            """Number of time steps in the series."""
+            return self._layout.n_series_steps
 
-    @property
-    def active_shared_symbols(self) -> frozenset[gm.KVSymbol]:
-        """Symbols that are being optimized and shared across time steps."""
-        return self._layout.active_shared_symbols
+        def deactivate_logging(self):
+            """Turn off logging."""
+            self._logging_active = False
 
-    @property
-    def active_series_symbols(self) -> frozenset[gm.KVSymbol]:
-        """Symbols that are being optimized and identify a time step."""
-        return self._layout.active_series_symbols
+        def reset_log(self):
+            """Clear the last log and activate the logging feature."""
+            self._logging_active = True
+            self._log = None
 
-    @property
-    def series_symbols(self) -> gm.KVArray:
-        """All symbols of the time series."""
-        return self._layout.series_symbols
-    
-    @property
-    def shared_symbols(self) -> gm.KVArray:
-        """All symbols shared across time steps."""
-        return self._layout.shared_symbols
+        @property
+        def log(self) -> dict[str, np.ndarray]:
+            """If logging is active, this log holds the stacked layout
+            outputs of all evaluations since the last call of `self.reset_log()`.
 
-    @property
-    def n_series_steps(self) -> int:
-        """Number of time steps in the series."""
-        return self._layout.n_series_steps
+            Returns:
+                dict[str, np.ndarray]: Layout outputs {str: (E, *)} where is the number of calls to `evaluate`.
+            """
+            return self._log
 
-    def deactivate_logging(self):
-        """Turn off logging."""
-        self._logging_active = False
-
-    def reset_log(self):
-        """Clear the last log and activate the logging feature."""
-        self._logging_active = True
-        self._log = None
-
-    @property
-    def log(self) -> dict[str, np.ndarray]:
-        """If logging is active, this log holds the stacked layout
-           outputs of all evaluations since the last call of `self.reset_log()`.
-
-        Returns:
-            dict[str, np.ndarray]: Layout outputs {str: (E, *)} where is the number of calls to `evaluate`.
-        """
-        return self._log
-
-    def set_init(self, new_init : np.ndarray | dict[gm.KVSymbol, float | np.ndarray]):
-        """Sets a new initial sample that the optimizer can query."""
-        if isinstance(new_init, dict):
-            self._init = self._init if self._init is not None else np.zeros(self.getDimension())
-            for s, v in new_init.items():
-                self._init[np.isin(self._layout.diff_symbols, [s])] = v
-        else:
-            self._init = new_init
-
-    def set_constants(self, new_constants : np.ndarray | dict[gm.KVSymbol, float | np.ndarray]):
-        """Sets new values for the constants in the problem."""
-        if isinstance(new_constants, dict):
-            for s, v in new_constants.items():
-                self._X_CACHE[np.isin(self._layout.in_symbols, [s]) & (~self._layout.diff_mask)] = v
-        else:
-            self._X_CACHE[~self._layout.diff_mask] = new_constants
-    
-    def set_pads(self, new_pads : np.ndarray | dict[gm.KVSymbol, float | np.ndarray]):
-        """Sets new padding values for the series."""
-        if isinstance(new_pads, dict):
-            self._pads = self._pads if self._pads is not None else np.zeros(self._layout.pad_size)
-            for s, v in new_pads.items():
-                self._pads.T[np.isin(self._layout.series_symbols, [s])] = v
-        else:
-            self._pads = new_pads
-
-    def evaluate(self, x: np.ndarray):
-        """Evaluates the problem at point x and returns value and sparse Jacobian."""
-        self._X_CACHE[self._layout.diff_mask] = x
-        phi, J = self._layout.eval_all(self._X_CACHE, self._pads)
-        if self._logging_active:
-            log = self._layout.report(self._X_CACHE)
-            if self._log is None:
-                self._log = log
+        def set_init(self, new_init : np.ndarray | dict[gm.KVSymbol, float | np.ndarray]):
+            """Sets a new initial sample that the optimizer can query."""
+            if isinstance(new_init, dict):
+                self._init = self._init if self._init is not None else np.zeros(self.getDimension())
+                for s, v in new_init.items():
+                    self._init[np.isin(self._layout.diff_symbols, [s])] = v
             else:
-                for k, v in log.items():
-                    self._log[k] = np.vstack((self._log[k], v))
-        return phi, J
-    
-    def objectives_report(self, x : np.ndarray) -> dict[str, np.ndarray]:
-        """Generates a report for the point `x`.
+                self._init = new_init
 
-        Args:
-            x (np.ndarray): Point to evaluate (`self.getDimension()`).
-
-        Returns:
-            dict[str, np.ndarray]: Non-squared value of all objectives at `x`.
-        """
-        x_copy = self._X_CACHE.copy()
-        x_copy[self._layout.diff_mask] = x
-        return self._layout.report(x_copy)
-
-    def f(self, x: np.ndarray):
-        raise NotImplementedError()
-
-    def getFHessian(self, x):
-        return []
-
-    def getDimension(self) -> int:
-        return self._layout.diff_mask.sum()
-
-    def getFeatureTypes(self):
-        return self._features
-
-    def getInitializationSample(self):
-        return self._init
-
-    def getBounds(self):
-        return self._layout.bounds.T
-
-    def report(self, verbose):
-        return "RAI NLP Layout"
-
-    def make_full_solution(self, x : np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Decodes a point `x` into a 1D block of shared symbols and a (T, N) block of series symbols.
-           Note: These blocks include the values of constants.
-        """
-        x_copy = self._X_CACHE.copy()
-        x_copy[self._layout.diff_mask] = x
-        return x_copy[:len(self._layout.shared_symbols)], x_copy[len(self._layout.shared_symbols):].reshape((-1, len(self._layout.series_symbols)))
-
-
-class RAI_NLPSolver():
-    """Wraps the interaction with the rai/ry/komo NLP-solver.
-       Internally builds the `RAI_NLP` for the given objectives and
-       manages the instantiation and operation of the solver and decodes
-       its output.
-    """
-    def __init__(self, objectives : dict[str, tuple[ry.OT, VectorizedLayout]],
-                       bounds : dict[gm.KVSymbol, tuple[float, float]]=None,
-                       default_bound=1e6,
-                       constants : np.ndarray=None,
-                       pads : np.ndarray=None,
-                       init : np.ndarray=None):
-        """Instantiates a new NLP Solver. Objectives are given as named layouts
-           accompanied by the objective type. If the layouts do not differentiate
-           fully against all their variables, then this interface requires a value
-           assignment for these constant values. This can be overriden later as well.
-
-        Args:
-            objectives (dict[str, tuple[ry.OT, VectorizedLayout]]): Objectives given as Layouts and objective type.
-            bounds (dict[gm.KVSymbol, tuple[float, float]]): Bounds for optimization variables.
-            default_bound (float, optional): Default bound which is applied to all variables
-                                             that do not have a custom one. Defaults to 1e6.
-            constants (np.ndarray | dict[gm.KVSymbol, float | np.ndarray], optional): Value of variables that are constants. Defaults to None.
-            pads (np.ndarray | dict[gm.KVSymbol, float], optional): Padding values for the time series. Defaults to None.
-            init (np.ndarray | dict[gm.KVSymbol, float], optional): Initial value to propose to the solver if it asks. Defaults to None.
-        """
-        self._nlp = RAI_NLP(objectives, bounds, default_bound, constants, pads, init)
-    
-    def solve(self, /,
-                    init_sample=None,
-                    constants=None,
-                    pads=None,
-                    stepMax=0.5,
-                    damping=1e-4,
-                    stopEvals=500,
-                    verbose=1,
-                    logging=False) -> tuple[np.ndarray, np.ndarray, ry.SolverReturn]:
-        """Invokes the solver. Provides many options for overriding the initials,
-           constants and padding values for this run. Also exposes some of the
-           internal solver options. Note that this *always* uses the AuLa solver.
-
-        Args:
-            init_sample (np.ndarray, optional): Override the starting point of the optimization. Defaults to None.
-            constants (np.ndarray | dict[gm.KVSymbol, float | np.ndarray], optional): Override the constants in the problem. Defaults to None.
-            pads (np.ndarray | dict[gm.KVSymbol, float | np.ndarray], optional): Override the padding of the time series. Defaults to None.
-            stepMax (float, optional): Max step size of the solver. Defaults to 0.5.
-            damping (float, optional): _description_. Defaults to 1e-4.
-            stopEvals (int, optional): Max number of evals the solver can do. Defaults to 500.
-            verbose (int, optional): Verbosity of the solver. Defaults to 1.
-            logging (bool, optional): Activates logging of the inner NLP.
-                                      The resulting log is available under `self.log`. Defaults to False.
-
-        Returns:
-            tuple[np.ndarray, np.ndarray, ry.SolverReturn]: Shared symbols, series symbols, inner solver return.
-        """
-        if pads is not None:
-            self._nlp.set_pads(pads)
-        if constants is not None:
-            self._nlp.set_constants(constants)
+        def set_constants(self, new_constants : np.ndarray | dict[gm.KVSymbol, float | np.ndarray]):
+            """Sets new values for the constants in the problem."""
+            if isinstance(new_constants, dict):
+                for s, v in new_constants.items():
+                    self._X_CACHE[np.isin(self._layout.in_symbols, [s]) & (~self._layout.diff_mask)] = v
+            else:
+                self._X_CACHE[~self._layout.diff_mask] = new_constants
         
-        if logging:
-            self._nlp.reset_log()
-        else:
-            self._nlp.deactivate_logging()
+        def set_pads(self, new_pads : np.ndarray | dict[gm.KVSymbol, float | np.ndarray]):
+            """Sets new padding values for the series."""
+            if isinstance(new_pads, dict):
+                self._pads = self._pads if self._pads is not None else np.zeros(self._layout.pad_size)
+                for s, v in new_pads.items():
+                    self._pads.T[np.isin(self._layout.series_symbols, [s])] = v
+            else:
+                self._pads = new_pads
 
-        solver = ry.NLP_Solver()
-        solver.setPyProblem(self._nlp)
-        solver.setSolver(ry.OptMethod.augmentedLag)
-        solver.setInitialization(init_sample)
-        solver.setOptions(stepMax=stepMax, damping=damping, stopEvals=stopEvals, verbose=verbose)
-        solver_return = solver.solve(0, verbose=verbose)
+        def evaluate(self, x: np.ndarray):
+            """Evaluates the problem at point x and returns value and sparse Jacobian."""
+            self._X_CACHE[self._layout.diff_mask] = x
+            phi, J = self._layout.eval_all(self._X_CACHE, self._pads)
+            if self._logging_active:
+                log = self._layout.report(self._X_CACHE)
+                if self._log is None:
+                    self._log = log
+                else:
+                    for k, v in log.items():
+                        self._log[k] = np.vstack((self._log[k], v))
+            return phi, J
+        
+        def objectives_report(self, x : np.ndarray) -> dict[str, np.ndarray]:
+            """Generates a report for the point `x`.
 
-        return self._nlp.make_full_solution(solver_return.x) + (solver_return,)
+            Args:
+                x (np.ndarray): Point to evaluate (`self.getDimension()`).
 
-    @property
-    def series_symbols(self) -> gm.KVArray:
-        return self._nlp.series_symbols
+            Returns:
+                dict[str, np.ndarray]: Non-squared value of all objectives at `x`.
+            """
+            x_copy = self._X_CACHE.copy()
+            x_copy[self._layout.diff_mask] = x
+            return self._layout.report(x_copy)
+
+        def f(self, x: np.ndarray):
+            raise NotImplementedError()
+
+        def getFHessian(self, x):
+            return []
+
+        def getDimension(self) -> int:
+            return self._layout.diff_mask.sum()
+
+        def getFeatureTypes(self):
+            return self._features
+
+        def getInitializationSample(self):
+            return self._init
+
+        def getBounds(self):
+            return self._layout.bounds.T
+
+        def report(self, verbose):
+            return "RAI NLP Layout"
+
+        def make_full_solution(self, x : np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+            """Decodes a point `x` into a 1D block of shared symbols and a (T, N) block of series symbols.
+            Note: These blocks include the values of constants.
+            """
+            x_copy = self._X_CACHE.copy()
+            x_copy[self._layout.diff_mask] = x
+            return x_copy[:len(self._layout.shared_symbols)], x_copy[len(self._layout.shared_symbols):].reshape((-1, len(self._layout.series_symbols)))
+
+
+    class RAI_NLPSolver():
+        """Wraps the interaction with the rai/ry/komo NLP-solver.
+        Internally builds the `RAI_NLP` for the given objectives and
+        manages the instantiation and operation of the solver and decodes
+        its output.
+        """
+        def __init__(self, objectives : dict[str, tuple[ry.OT, VectorizedLayout]],
+                        bounds : dict[gm.KVSymbol, tuple[float, float]]=None,
+                        default_bound=1e6,
+                        constants : np.ndarray=None,
+                        pads : np.ndarray=None,
+                        init : np.ndarray=None):
+            """Instantiates a new NLP Solver. Objectives are given as named layouts
+            accompanied by the objective type. If the layouts do not differentiate
+            fully against all their variables, then this interface requires a value
+            assignment for these constant values. This can be overriden later as well.
+
+            Args:
+                objectives (dict[str, tuple[ry.OT, VectorizedLayout]]): Objectives given as Layouts and objective type.
+                bounds (dict[gm.KVSymbol, tuple[float, float]]): Bounds for optimization variables.
+                default_bound (float, optional): Default bound which is applied to all variables
+                                                that do not have a custom one. Defaults to 1e6.
+                constants (np.ndarray | dict[gm.KVSymbol, float | np.ndarray], optional): Value of variables that are constants. Defaults to None.
+                pads (np.ndarray | dict[gm.KVSymbol, float], optional): Padding values for the time series. Defaults to None.
+                init (np.ndarray | dict[gm.KVSymbol, float], optional): Initial value to propose to the solver if it asks. Defaults to None.
+            """
+            self._nlp = RAI_NLP(objectives, bounds, default_bound, constants, pads, init)
+        
+        def solve(self, /,
+                        init_sample=None,
+                        constants=None,
+                        pads=None,
+                        stepMax=0.5,
+                        damping=1e-4,
+                        stopEvals=500,
+                        verbose=1,
+                        logging=False) -> tuple[np.ndarray, np.ndarray, ry.SolverReturn]:
+            """Invokes the solver. Provides many options for overriding the initials,
+            constants and padding values for this run. Also exposes some of the
+            internal solver options. Note that this *always* uses the AuLa solver.
+
+            Args:
+                init_sample (np.ndarray, optional): Override the starting point of the optimization. Defaults to None.
+                constants (np.ndarray | dict[gm.KVSymbol, float | np.ndarray], optional): Override the constants in the problem. Defaults to None.
+                pads (np.ndarray | dict[gm.KVSymbol, float | np.ndarray], optional): Override the padding of the time series. Defaults to None.
+                stepMax (float, optional): Max step size of the solver. Defaults to 0.5.
+                damping (float, optional): _description_. Defaults to 1e-4.
+                stopEvals (int, optional): Max number of evals the solver can do. Defaults to 500.
+                verbose (int, optional): Verbosity of the solver. Defaults to 1.
+                logging (bool, optional): Activates logging of the inner NLP.
+                                        The resulting log is available under `self.log`. Defaults to False.
+
+            Returns:
+                tuple[np.ndarray, np.ndarray, ry.SolverReturn]: Shared symbols, series symbols, inner solver return.
+            """
+            if pads is not None:
+                self._nlp.set_pads(pads)
+            if constants is not None:
+                self._nlp.set_constants(constants)
+            if logging:
+                self._nlp.reset_log()
+            else:
+                self._nlp.deactivate_logging()
+
+            solver = ry.NLP_Solver()
+            solver.setPyProblem(self._nlp)
+            solver.setSolver(ry.OptMethod.augmentedLag)
+            solver.setInitialization(init_sample)
+            solver.setOptions(stepMax=stepMax, damping=damping, stopEvals=stopEvals, verbose=verbose)
+            solver_return = solver.solve(0, verbose=verbose)
+
+            return self._nlp.make_full_solution(solver_return.x) + (solver_return,)
+
+        @property
+        def series_symbols(self) -> gm.KVArray:
+            return self._nlp.series_symbols
+        
+        @property
+        def shared_symbols(self) -> gm.KVArray:
+            return self._nlp.shared_symbols
+
+        def report(self, x : np.ndarray) -> dict[str, np.ndarray]:
+            return self._nlp.objectives_report(x)
+        
+        def set_pads(self, new_pads : np.ndarray):
+            self._nlp.set_pads(new_pads)
+
+        @property
+        def bounds(self) -> np.ndarray:
+            return self._nlp.getBounds()
+
+        def report(self, x : np.ndarray) -> dict[str, np.ndarray]:
+            return self._nlp.objectives_report(x)
+        
+        def set_pads(self, new_pads : np.ndarray):
+            self._nlp.set_pads(new_pads)
+
+        @property
+        def log(self):
+            return self._nlp.log
+
+        @property
+        def bounds(self) -> np.ndarray:
+            return self._nlp.getBounds()
+
+
+    class RAI_NLPSolver():
+        def __init__(self, objectives : dict[str, tuple[ry.OT, VectorizedLayout]],
+                        bounds : dict[gm.KVSymbol, tuple[float, float]]=None,
+                        default_bound=1e6,
+                        constants : np.ndarray=None,
+                        pads : np.ndarray=None,
+                        init : np.ndarray=None):
+            self._nlp = RAI_NLP(objectives, bounds, default_bound, constants, pads, init)
+        
+        def solve(self, init_sample=None, constants=None, pads=None, stepMax=0.5, damping=1e-4, stopEvals=500, verbose=1, logging=False) -> tuple[np.ndarray, np.ndarray, ry.SolverReturn]:
+            if pads is not None:
+                self._nlp.set_pads(pads)
+            if constants is not None:
+                self._nlp.set_constants(constants)
+            
+            if logging:
+                self._nlp.reset_log()
+            else:
+                self._nlp.deactivate_logging()
+
+            solver = ry.NLP_Solver()
+            solver.setPyProblem(self._nlp)
+            solver.setSolver(ry.OptMethod.augmentedLag)
+            solver.setInitialization(init_sample)
+            solver.setOptions(stepMax=stepMax, damping=damping, stopEvals=stopEvals, verbose=verbose)
+            solver_return = solver.solve(0, verbose=verbose)
+
+            return self._nlp.make_full_solution(solver_return.x) + (solver_return,)
+
+        @property
+        def series_symbols(self) -> gm.KVArray:
+            return self._nlp.series_symbols
+        
+        @property
+        def shared_symbols(self) -> gm.KVArray:
+            return self._nlp.shared_symbols
+
+        def report(self, x : np.ndarray) -> dict[str, np.ndarray]:
+            return self._nlp.objectives_report(x)
+        
+        def set_pads(self, new_pads : np.ndarray):
+            self._nlp.set_pads(new_pads)
+
+        @property
+        def bounds(self) -> np.ndarray:
+            return self._nlp.getBounds()
+
+        def report(self, x : np.ndarray) -> dict[str, np.ndarray]:
+            return self._nlp.objectives_report(x)
+        
+        def set_pads(self, new_pads : np.ndarray):
+            self._nlp.set_pads(new_pads)
+
+        @property
+        def log(self):
+            return self._nlp.log
+
+        @property
+        def bounds(self) -> np.ndarray:
+            return self._nlp.getBounds()
+
+except (ModuleNotFoundError, ImportError) as e:
+    class RAI_NLP():
+        def __init__(self, *args, **kwargs):
+            raise NotImplementedError(f'Cannot use RAI because you are missing dependencies. Use "pip install kineverse[rai]" to install them. Original exception: {e}')
     
-    @property
-    def shared_symbols(self) -> gm.KVArray:
-        return self._nlp.shared_symbols
+    class RAI_NLPSolver():
+        def __init__(self, *args, **kwargs):
+            raise NotImplementedError(f'Cannot use RAI because you are missing dependencies. Use "pip install kineverse[rai]" to install them. Original exception: {e}')
 
-    def report(self, x : np.ndarray) -> dict[str, np.ndarray]:
-        return self._nlp.objectives_report(x)
-    
-    def set_pads(self, new_pads : np.ndarray):
-        self._nlp.set_pads(new_pads)
-
-    @property
-    def log(self):
-        return self._nlp.log
-
-    @property
-    def bounds(self) -> np.ndarray:
-        return self._nlp.getBounds()
+    SolverObjectives = None
