@@ -254,6 +254,13 @@ def _parse_joint_node(model : Model, joint_node : ET.Element, name_prefix : Path
     if limit_node is not None and type != 'fixed' and 'lower' in limit_node.attrib:
         limit_lb = float(limit_node.attrib['lower'])
         limit_ub = float(limit_node.attrib['upper'])
+        if limit_lb == limit_ub:
+            # TODO: Is this the right way of handling this?
+            #       Maybe an exception and handling flag would be better.
+            type = 'fixed'
+            limit_lb = None
+            limit_ub = None
+            limit_vel = None
     
     mimic_node = joint_node.find('mimic')
     if type != 'fixed':
