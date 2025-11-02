@@ -177,55 +177,103 @@ class VectorizedLayout():
 
     @property
     def diff_symbols(self) -> set[gm.KVSymbol]:
+        """Symbols that a derivative is computed for."""
         return self._unstamped_diff_symbols
 
     @property
     def series_symbols(self) -> gm.KVArray[gm.KVSymbol]:
+        """Symbols that exist for each time step."""
         return self._series_symbols
 
     @property
     def shared_symbols(self) -> gm.KVArray[gm.KVSymbol]:
+        """Symbols that are shared across time steps."""
         return self._shared_symbols
 
     @cached_property
     def symbols(self) -> set[gm.KVSymbol]:
+        """All symbols of the cost term."""
         return self._expr.symbols
 
     @cached_property
     def ordered_symbols(self) -> set[gm.KVSymbol]:
+        """All symbols of the cost term in their vectorized evaluation order."""
         return self._expr.ordered_symbols
 
     @cached_property
     def unstamped_symbols(self) -> set[gm.KVSymbol]:
+        """All symbols but without any time stamps."""
         return {s.set_stamp(None) for s in self.symbols}
 
     @cached_property
     def required_steps(self) -> list[int]:
+        """List of step indices that this layout needs for evaluation."""
         return self._required_steps[self._pad_steps:]
 
     @cached_property
     def dim(self) -> int:
+        """Size of the evaluated vector."""
         return (np.prod(self._expr.shape) if type(self._weights) != np.ndarray else self._weights.shape[0]) * len(self._t_steps)
 
     @cached_property
     def J_size(self) -> int:
+        """Number of non-zero entries in the Jacobian."""
         return self._J_MASK.sum()
 
     @cached_property
     def pad_size(self) -> tuple[int, int]:
+        """Shape of the needed-padding values, meaning the required arguments for time steps < 0."""
         return (self._pad_steps, len(self.series_symbols))
 
     @property
     def t_steps(self) -> list[int]:
+        """Time steps that values are computed for."""
         return self._t_steps
 
     def eval_expr(self, series : np.ndarray, shared : np.ndarray=None, series_pad_values : np.ndarray=None) -> np.ndarray:
+        """Evaluates the function at a specific point. The values of the series and
+           the shared variables are provided separately as (T, N) and (M) arrays.
+           It is also possible to provide (P, N) pad values or a shape/value
+           that broadcasts to (P, N).
+
+        Args:
+            series (np.ndarray): Series values (T, N).
+            shared (np.ndarray, optional): Shared values (M). Defaults to None.
+            series_pad_values (np.ndarray, optional): Padding values broadcasting to (P, N). Defaults to None.
+
+        Returns:
+            np.ndarray: Evaluated vector (Z).
+        """
         return self._eval_expr(self._make_M(series, shared, series_pad_values))
 
     def eval_J(self, series : np.ndarray, shared : np.ndarray=None, series_pad_values : np.ndarray=None) -> np.ndarray:
+        """Evaluates the Jacobian at a specific point. The values of the series and
+           the shared variables are provided separately as (T, N) and (M) arrays.
+           It is also possible to provide (P, N) pad values or a shape/value
+           that broadcasts to (P, N).
+
+        Args:
+            series (np.ndarray): Series values (T, N).
+            shared (np.ndarray, optional): Shared values (M). Defaults to None.
+            series_pad_values (np.ndarray, optional): Padding values broadcasting to (P, N). Defaults to None.
+
+        Returns:
+            np.ndarray: Evaluated sparse Jacobian (3, *) as (row, column, value).
+        """
         return self._eval_J(self._make_M(series, shared, series_pad_values))
     
     def eval_all(self, series : np.ndarray, shared : np.ndarray=None, series_pad_values : np.ndarray=None) -> tuple[np.ndarray, np.ndarray]:
+        """Evaluates function and Jacobian simultaneously at a point. Slightly faster than
+           individual evaluation.
+
+        Args:
+            series (np.ndarray): Series values (T, N).
+            shared (np.ndarray, optional): Shared values (M). Defaults to None.
+            series_pad_values (np.ndarray, optional): Padding values broadcasting to (P, N). Defaults to None.
+
+        Returns:
+            tuple[np.ndarray, np.ndarray]: Evaluated function as (Z), evaluated sparse Jacobian (3, *).
+        """
         big_M = self._make_M(series, shared, series_pad_values)
         return self._eval_expr(big_M), self._eval_J(big_M)
 
@@ -320,6 +368,9 @@ class VectorizedLayout():
 
 
 class MacroLayout():
+    """Builds a consistent evaluation layout for multiple VectorizedLayouts and
+       manages their evaluation.
+    """
     def __init__(self, components : dict[str, VectorizedLayout],
                  bounds : dict[gm.KVSymbol, tuple[float, float]]=None,
                  default_bound=1e6):
@@ -387,60 +438,84 @@ class MacroLayout():
 
     @property
     def bounds(self) -> np.ndarray:
+        """Bounds of variables that are selected for optimization in their evaluation order. (V, 2) as (Low, High)."""
         return self._bounds
 
     @cached_property
     def diff_mask(self) -> np.ndarray:
+        """Masks in all symbols the ones which a derivative is computed for."""
         return np.hstack(([s in self._diff_symbols for s in self._shared_symbols] + self._n_series_steps * [s in self._diff_symbols for s in self._series_symbols]))
 
     @cached_property
     def diff_symbols(self) -> gm.KVArray:
+        """Symbols that a derivative is computed for."""
         return self.in_symbols[self.diff_mask]
 
     @property
     def active_symbols(self) -> frozenset[gm.KVSymbol]:
+        """Synonymous with `set(self.diff_symbols)`."""
         return self._diff_symbols
 
     @cached_property
     def active_shared_symbols(self) -> frozenset[gm.KVSymbol]:
+        """Active symbols shared across time steps."""
         return frozenset({s for s in self._shared_symbols if s in self.active_symbols})
 
     @cached_property
     def active_series_symbols(self) -> frozenset[gm.KVSymbol]:
+        """Active symbols that belong to a specific time step."""
         return frozenset({s for s in self._series_symbols if s in self.active_symbols})
 
     @property
     def series_symbols(self) -> gm.KVArray:
+        """Symbols belonging to the time series in vector order."""
         return self._series_symbols
     
     @property
     def shared_symbols(self) -> gm.KVArray:
+        """Symbols belonging shared across time steps in vector order."""
         return self._shared_symbols
 
     @property
     def n_series_steps(self) -> int:
+        """Number of time series steps."""
         return self._n_series_steps
 
     @cached_property
     def in_dim(self) -> int:
+        """Size of the full vector for evaluation."""
         return len(self._shared_symbols) + len(self._series_symbols) * self._n_series_steps
 
     @cached_property
     def out_dim(self) -> int:
+        """Size of the full computed residual."""
         return sum([c.dim for c in self._components.values()])
 
     @cached_property
     def in_symbols(self) -> gm.KVArray:
+        """All symbols needed to evaluate a point."""
         return gm.hstack([self.shared_symbols] + [self.series_symbols] * self.n_series_steps)
 
     @cached_property
     def pad_size(self) -> tuple[int, int]:
+        """Shape of the needed time series padding."""
         return np.vstack([c.pad_size for c in self._components.values()]).max(axis=0)
 
     def _make_M_and_S(self, x : np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         return x[:len(self._shared_symbols)], x[len(self._shared_symbols):].reshape((-1, len(self._series_symbols)))
 
-    def eval_all(self, x : np.ndarray, pads : dict[str, np.ndarray]=None) -> np.ndarray:
+    def eval_all(self, x : np.ndarray, pads : dict[str, np.ndarray]=None) -> tuple[np.ndarray, np.ndarray]:
+        """Evaluates both value and Jacobian at a point. The point must be presented
+           as a stacked vector following `self.in_symbols` in order. Padding can be
+           overridden, but is given as a dictionary of values that broadcast to shape P.
+
+        Args:
+            x (np.ndarray): Point to evaluate (*).
+            pads (dict[str, np.ndarray], optional): Padding values to use {s: (->P)}. Defaults to None.
+
+        Returns:
+            tuple[np.ndarray, np.ndarray]: Evaluated function as (Z), evaluated sparse Jacobian (3, *).
+        """
         x_shared, x_series = self._make_M_and_S(x)
         out_expr = np.empty(self.out_dim, dtype=float)
         out_J = np.empty((self._J_size, 3))
@@ -488,7 +563,16 @@ class MacroLayout():
             raise ValueError(f'Sparse Jacobian coordinates are out of limits. Limit: {self.out_dim - 1, self.in_dim - 1}, Given: {out_J[:,:2].max(axis=0)}.')
         return out_J
 
-    def report(self, x : np.ndarray) -> dict[str, float]:
+    def report(self, x : np.ndarray) -> dict[str, np.ndarray]:
+        """Reports for each sub-layout its value at the given point `x` which
+           has to follow the value order given by `self.in_symbols`.
+
+        Args:
+            x (np.ndarray): Encoded point to evaluate (*).
+
+        Returns:
+            dict[str, float]: Values of sub-layouts at x (*).
+        """
         out_x = self.eval_expr(x)
         out_d = {}
         for (cn, c), offset in zip(self._components.items(),
@@ -501,15 +585,30 @@ import robotic as ry
 from robotic import nlp
 SolverObjectives = ry.OT
 
+
 class RAI_NLP(nlp.NLP):
+    """Low-level bridge to the NLP solver interface of ry/rai/komo.
+    """
     def __init__(self, objectives : dict[str, tuple[ry.OT, VectorizedLayout]],
                        bounds : dict[gm.KVSymbol, tuple[float, float]],
                        default_bound=1e6,
-                       constants : np.ndarray=None,
-                       pads : np.ndarray=None,
-                       init : np.ndarray=None):
-        self._pads = pads
-        self._init = init
+                       constants : np.ndarray | dict[gm.KVSymbol, float | np.ndarray]=None,
+                       pads : np.ndarray | dict[gm.KVSymbol, float]=None,
+                       init : np.ndarray | dict[gm.KVSymbol, float]=None):
+        """Instantiates a new NLP problem. Objectives are given as named layouts
+           accompanied by the objective type. If the layouts do not differentiate
+           fully against all their variables, then this interface requires a value
+           assignment for these constant values. This can be overriden later as well.
+
+        Args:
+            objectives (dict[str, tuple[ry.OT, VectorizedLayout]]): Objectives given as Layouts and objective type.
+            bounds (dict[gm.KVSymbol, tuple[float, float]]): Bounds for optimization variables.
+            default_bound (float, optional): Default bound which is applied to all variables
+                                             that do not have a custom one. Defaults to 1e6.
+            constants (np.ndarray | dict[gm.KVSymbol, float | np.ndarray], optional): Value of variables that are constants. Defaults to None.
+            pads (np.ndarray | dict[gm.KVSymbol, float], optional): Padding values for the time series. Defaults to None.
+            init (np.ndarray | dict[gm.KVSymbol, float], optional): Initial value to propose to the solver if it asks. Defaults to None.
+        """
 
         self._layout = MacroLayout({n: v for n, (_, v) in objectives.items()},
                                    bounds,
@@ -521,47 +620,70 @@ class RAI_NLP(nlp.NLP):
         if not self._layout.diff_mask.all():
             if constants is None:
                 raise ValueError(f'Expected {(~self._layout.diff_mask).sum()} constant values.')
-            self._X_CACHE[~self._layout.diff_mask] = constants
+            self.set_constants(constants)
 
         self._logging_active = False
         self._log = None
+        
+        self._pads = None
+        if pads is not None:
+            self.set_pads(pads)
+        
+        self._init = None
+        if init is not None:
+            self.set_init(init)
 
     @property
     def active_symbols(self) -> frozenset[gm.KVSymbol]:
+        """Symbols that are being optimized."""
         return self._layout.active_symbols
 
     @property
     def active_shared_symbols(self) -> frozenset[gm.KVSymbol]:
+        """Symbols that are being optimized and shared across time steps."""
         return self._layout.active_shared_symbols
 
     @property
     def active_series_symbols(self) -> frozenset[gm.KVSymbol]:
+        """Symbols that are being optimized and identify a time step."""
         return self._layout.active_series_symbols
 
     @property
     def series_symbols(self) -> gm.KVArray:
+        """All symbols of the time series."""
         return self._layout.series_symbols
     
     @property
     def shared_symbols(self) -> gm.KVArray:
+        """All symbols shared across time steps."""
         return self._layout.shared_symbols
 
     @property
     def n_series_steps(self) -> int:
+        """Number of time steps in the series."""
         return self._layout.n_series_steps
 
     def deactivate_logging(self):
+        """Turn off logging."""
         self._logging_active = False
 
     def reset_log(self):
+        """Clear the last log and activate the logging feature."""
         self._logging_active = True
         self._log = None
 
     @property
     def log(self) -> dict[str, np.ndarray]:
+        """If logging is active, this log holds the stacked layout
+           outputs of all evaluations since the last call of `self.reset_log()`.
+
+        Returns:
+            dict[str, np.ndarray]: Layout outputs {str: (E, *)} where is the number of calls to `evaluate`.
+        """
         return self._log
 
     def set_init(self, new_init : np.ndarray | dict[gm.KVSymbol, float | np.ndarray]):
+        """Sets a new initial sample that the optimizer can query."""
         if isinstance(new_init, dict):
             self._init = self._init if self._init is not None else np.zeros(self.getDimension())
             for s, v in new_init.items():
@@ -570,6 +692,7 @@ class RAI_NLP(nlp.NLP):
             self._init = new_init
 
     def set_constants(self, new_constants : np.ndarray | dict[gm.KVSymbol, float | np.ndarray]):
+        """Sets new values for the constants in the problem."""
         if isinstance(new_constants, dict):
             for s, v in new_constants.items():
                 self._X_CACHE[np.isin(self._layout.in_symbols, [s]) & (~self._layout.diff_mask)] = v
@@ -577,6 +700,7 @@ class RAI_NLP(nlp.NLP):
             self._X_CACHE[~self._layout.diff_mask] = new_constants
     
     def set_pads(self, new_pads : np.ndarray | dict[gm.KVSymbol, float | np.ndarray]):
+        """Sets new padding values for the series."""
         if isinstance(new_pads, dict):
             self._pads = self._pads if self._pads is not None else np.zeros(self._layout.pad_size)
             for s, v in new_pads.items():
@@ -585,6 +709,7 @@ class RAI_NLP(nlp.NLP):
             self._pads = new_pads
 
     def evaluate(self, x: np.ndarray):
+        """Evaluates the problem at point x and returns value and sparse Jacobian."""
         self._X_CACHE[self._layout.diff_mask] = x
         phi, J = self._layout.eval_all(self._X_CACHE, self._pads)
         if self._logging_active:
@@ -597,6 +722,14 @@ class RAI_NLP(nlp.NLP):
         return phi, J
     
     def objectives_report(self, x : np.ndarray) -> dict[str, np.ndarray]:
+        """Generates a report for the point `x`.
+
+        Args:
+            x (np.ndarray): Point to evaluate (`self.getDimension()`).
+
+        Returns:
+            dict[str, np.ndarray]: Non-squared value of all objectives at `x`.
+        """
         x_copy = self._X_CACHE.copy()
         x_copy[self._layout.diff_mask] = x
         return self._layout.report(x_copy)
@@ -614,7 +747,7 @@ class RAI_NLP(nlp.NLP):
         return self._features
 
     def getInitializationSample(self):
-        raise self._init
+        return self._init
 
     def getBounds(self):
         return self._layout.bounds.T
@@ -623,21 +756,69 @@ class RAI_NLP(nlp.NLP):
         return "RAI NLP Layout"
 
     def make_full_solution(self, x : np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Decodes a point `x` into a 1D block of shared symbols and a (T, N) block of series symbols.
+           Note: These blocks include the values of constants.
+        """
         x_copy = self._X_CACHE.copy()
         x_copy[self._layout.diff_mask] = x
         return x_copy[:len(self._layout.shared_symbols)], x_copy[len(self._layout.shared_symbols):].reshape((-1, len(self._layout.series_symbols)))
 
 
 class RAI_NLPSolver():
+    """Wraps the interaction with the rai/ry/komo NLP-solver.
+       Internally builds the `RAI_NLP` for the given objectives and
+       manages the instantiation and operation of the solver and decodes
+       its output.
+    """
     def __init__(self, objectives : dict[str, tuple[ry.OT, VectorizedLayout]],
                        bounds : dict[gm.KVSymbol, tuple[float, float]]=None,
                        default_bound=1e6,
                        constants : np.ndarray=None,
                        pads : np.ndarray=None,
                        init : np.ndarray=None):
+        """Instantiates a new NLP Solver. Objectives are given as named layouts
+           accompanied by the objective type. If the layouts do not differentiate
+           fully against all their variables, then this interface requires a value
+           assignment for these constant values. This can be overriden later as well.
+
+        Args:
+            objectives (dict[str, tuple[ry.OT, VectorizedLayout]]): Objectives given as Layouts and objective type.
+            bounds (dict[gm.KVSymbol, tuple[float, float]]): Bounds for optimization variables.
+            default_bound (float, optional): Default bound which is applied to all variables
+                                             that do not have a custom one. Defaults to 1e6.
+            constants (np.ndarray | dict[gm.KVSymbol, float | np.ndarray], optional): Value of variables that are constants. Defaults to None.
+            pads (np.ndarray | dict[gm.KVSymbol, float], optional): Padding values for the time series. Defaults to None.
+            init (np.ndarray | dict[gm.KVSymbol, float], optional): Initial value to propose to the solver if it asks. Defaults to None.
+        """
         self._nlp = RAI_NLP(objectives, bounds, default_bound, constants, pads, init)
     
-    def solve(self, init_sample=None, constants=None, pads=None, stepMax=0.5, damping=1e-4, stopEvals=500, verbose=1, logging=False) -> tuple[np.ndarray, np.ndarray, ry.SolverReturn]:
+    def solve(self, /,
+                    init_sample=None,
+                    constants=None,
+                    pads=None,
+                    stepMax=0.5,
+                    damping=1e-4,
+                    stopEvals=500,
+                    verbose=1,
+                    logging=False) -> tuple[np.ndarray, np.ndarray, ry.SolverReturn]:
+        """Invokes the solver. Provides many options for overriding the initials,
+           constants and padding values for this run. Also exposes some of the
+           internal solver options. Note that this *always* uses the AuLa solver.
+
+        Args:
+            init_sample (np.ndarray, optional): Override the starting point of the optimization. Defaults to None.
+            constants (np.ndarray | dict[gm.KVSymbol, float | np.ndarray], optional): Override the constants in the problem. Defaults to None.
+            pads (np.ndarray | dict[gm.KVSymbol, float | np.ndarray], optional): Override the padding of the time series. Defaults to None.
+            stepMax (float, optional): Max step size of the solver. Defaults to 0.5.
+            damping (float, optional): _description_. Defaults to 1e-4.
+            stopEvals (int, optional): Max number of evals the solver can do. Defaults to 500.
+            verbose (int, optional): Verbosity of the solver. Defaults to 1.
+            logging (bool, optional): Activates logging of the inner NLP.
+                                      The resulting log is available under `self.log`. Defaults to False.
+
+        Returns:
+            tuple[np.ndarray, np.ndarray, ry.SolverReturn]: Shared symbols, series symbols, inner solver return.
+        """
         if pads is not None:
             self._nlp.set_pads(pads)
         if constants is not None:
@@ -670,6 +851,10 @@ class RAI_NLPSolver():
     
     def set_pads(self, new_pads : np.ndarray):
         self._nlp.set_pads(new_pads)
+
+    @property
+    def log(self):
+        return self._nlp.log
 
     @property
     def bounds(self) -> np.ndarray:
