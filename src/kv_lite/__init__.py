@@ -5,8 +5,11 @@ from . import splines
 
 try:
     from . import ros_utils as ros
-except ModuleNotFoundError:
-    print('No ROS found. ROS functions not loaded.')
+except ModuleNotFoundError as e:
+    if e.name == 'rospy':
+        print('No ROS found. ROS functions not loaded.')
+    else:
+        raise e
 
 from .spatial import *
 from .lie     import SE3, \
