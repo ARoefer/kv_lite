@@ -48,13 +48,18 @@ class FKChainException(Exception):
 
 
 class Graph():
-    def __init__(self) -> None:
+    def __init__(self, root_node='world') -> None:
         self._nodes = {}
         self._incoming_edges  = {}
         self._named_edges     = {}
         self._inv_named_edges = {}
+        self._root_node       = root_node
 
-        self._nodes['world'] = Frame('world')
+        self._nodes[root_node] = Frame(root_node)
+
+    @property
+    def root_node(self) -> str:
+        return self._root_node
 
     def add_frame(self, frame : Frame):
         self._nodes[frame.name] = frame
