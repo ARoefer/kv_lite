@@ -8,6 +8,7 @@ from .graph import DirectedEdge
 from . import spatial as gm
 from .graph import Graph,        \
                    Frame,        \
+                   FrameView,    \
                    DirectedEdge
 
 
