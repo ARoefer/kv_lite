@@ -251,8 +251,8 @@ def _parse_joint_node(model : Model, joint_node : ET.Element, name_prefix : Path
     if type in {'revolute', 'prismatic'} and limit_node is None:
         raise RuntimeError(f'Joint type "{type}" requires limit node.')
     
-    limit_lb = None if limit_node is None or type == 'fixed' else 0
-    limit_ub = None if limit_node is None or type == 'fixed' else 0
+    limit_lb = None if limit_node is None or type in {'fixed', 'continuous'} else 0
+    limit_ub = None if limit_node is None or type in {'fixed', 'continuous'} else 0
     limit_vel    = None if limit_node is None or type == 'fixed' else float(limit_node.attrib['velocity'])
     limit_effort = None if limit_node is None or type == 'fixed' else float(limit_node.attrib['effort'])
 
