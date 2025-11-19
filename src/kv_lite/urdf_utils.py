@@ -8,6 +8,7 @@ from .model import Model,        \
                    ConstrainedEdge, \
                    Body,         \
                    Frame,        \
+                   FrameView,    \
                    Constraint,   \
                    Inertial,     \
                    Geometry
@@ -54,7 +55,11 @@ class URDFObject():
     """A lightweight interface block to interact the model class using the
     familiar URDF concepts (i.e. joints, links)
     """
-    def __init__(self, model : Model, name, links, joints, root) -> None:
+    def __init__(self, model  : Model,
+                       name   : str,
+                       links  : dict[str, Path],
+                       joints : dict[str, Path],
+                       root   : str) -> None:
         self._model  = model
         self._name   = name
         self._links  = links
@@ -66,40 +71,40 @@ class URDFObject():
         return self._model
 
     @property
-    def root(self):
+    def root(self) -> Path:
         return self._links[self._root]
     
     @property
-    def root_link(self):
+    def root_link(self) -> str:
         return self._root
 
     @property
-    def name(self):
+    def name(self) -> str:
         return self._name
     
     @property
-    def links(self):
+    def links(self) -> dict[str, Body]:
         return {l: self._model.get_frame(fn) for l, fn in self._links.items()}
     
     @property
-    def joints(self):
+    def joints(self) -> dict[str, URDFJoint]:
         return {j: self._model.get_edge(en) for j, en in self._joints.items()}
 
     @property
-    def dynamic_joints(self):
+    def dynamic_joints(self) -> dict[str, URDFJoint]:
         return {j: edge for j, en in self._joints.items() if (edge:=self._model.get_edge(en)).type != 'fixed'}
 
     @cached_property
-    def joints_by_symbols(self):
+    def joints_by_symbols(self) -> dict[gm.KVSymbol, str]:
         return {j.position: jn for jn, j in self.dynamic_joints.items()}
 
-    def get_link(self, name):
+    def get_link(self, name : str) -> Frame:
         return self._model.get_frame(self._links[name])
     
-    def get_joint(self, name):
-        return self._model.get_frame(self._joints[name])
+    def get_joint(self, name : str) -> URDFJoint:
+        return self._model.get_edge(self._joints[name])
 
-    def get_fk(self, link, target='world'):
+    def get_fk(self, link, target='world') -> FrameView:
         l_fullname = self._links[link] if link in self._links else link
         target     = self._links[target] if target in self._links else target
         return self._model.get_fk(l_fullname, target)
@@ -113,7 +118,7 @@ class URDFObject():
         return list(acc)
     
     @cached_property
-    def q_limit(self):
+    def q_limit(self) -> gm.KVArray:
         q_lim = gm.ones((len(self.q), 2))
         q_lim[:, 0] *= -1
         q_lim *= gm.np.inf
@@ -138,7 +143,7 @@ class URDFObject():
         return [p.derivative() for p in self.q]
 
     @cached_property
-    def q_dot_limit(self):
+    def q_dot_limit(self) -> gm.KVArray:
         q_lim = gm.ones((len(self.q_dot), 2))
         q_lim[:, 0] *= -1
         q_lim *= gm.np.inf
@@ -246,8 +251,8 @@ def _parse_joint_node(model : Model, joint_node : ET.Element, name_prefix : Path
     if type in {'revolute', 'prismatic'} and limit_node is None:
         raise RuntimeError(f'Joint type "{type}" requires limit node.')
     
-    limit_lb = None if limit_node is None or type == 'fixed' else 0
-    limit_ub = None if limit_node is None or type == 'fixed' else 0
+    limit_lb = None if limit_node is None or type in {'fixed', 'continuous'} else 0
+    limit_ub = None if limit_node is None or type in {'fixed', 'continuous'} else 0
     limit_vel    = None if limit_node is None or type == 'fixed' else float(limit_node.attrib['velocity'])
     limit_effort = None if limit_node is None or type == 'fixed' else float(limit_node.attrib['effort'])
 

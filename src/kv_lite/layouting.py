@@ -85,10 +85,16 @@ class VectorizedLayout():
             max_stamp = max(stamps)
             sorted_stamps = list(sorted(stamps))
             relative_steps = np.asarray([s - max_stamp for s in sorted_stamps if s is not None])
+            # The assumption is that series will always give the desired points in the desired order.
+            # However, with multiple time stamps this series needs to be reshaped where all referenced
+            # time points finally lay in one row together. This array collects which indices in the series
+            # to assemble per time step.
             self._step_reorder = np.asarray(self._required_steps)[:,None] + relative_steps[None]
             self._required_steps = sorted(set(self._step_reorder.flatten()))
+            # At this step these are relative time offsets, not indices in the input series.
             self._step_reorder -= self._step_reorder.min()
-            J_coord_offsets = (0, relative_steps.min() * len(self._series_symbols))
+            # Densifying the indices to match the expected input.
+            self._step_reorder  = np.unique(self._step_reorder, return_inverse=True)[1]
             if (relative_steps[relative_steps != 0] >= -self._order).any():
                 raise ValueError(f'Stride overlaps with higher-order. This is not permitted.')
 
@@ -100,22 +106,38 @@ class VectorizedLayout():
             else:
                 self._syms_derivative = gm.hstack([s for s in self._shared_symbols if s in diff_symbols] + 
                                                   sum([[s.set_stamp(stamp) for s in self._series_symbols if s in diff_symbols] for stamp in sorted_stamps], []))
+
         else:
             if next(iter(stamps)) is not None:
                 expr = expr.set_stamp(None)
 
             self._step_reorder = None
-            J_coord_offsets = (0, 0)
             self._eval_args = gm.hstack([self._shared_symbols, self._series_symbols])
             self._syms_derivative = self._eval_args if diff_symbols is None else self._eval_args[np.isin(self._eval_args, list(diff_symbols))]
+            relative_steps = None # Hack for branching to calculate jac step
 
         self._unstamped_diff_symbols = {s.set_stamp(None) for s in self._syms_derivative}
         self._width_step_derivative  = len(self._unstamped_diff_symbols) - self._n_shared_diffs
         self._expr    = gm.VEval(expr.reshape((-1,)), self._eval_args)
-
+        
         self._J_coords, self._J_sparse = expr.squeeze().jacobian(self._syms_derivative).reshape((-1, len(self._syms_derivative))).to_coo()
         self._J_shared = self._J_coords[:, 1] < self._n_shared_diffs
-        self._J_coords[~self._J_shared] += J_coord_offsets
+
+        step_x_coords = np.arange(self._width_step_derivative)
+        struct_zeros  = ~np.isin(step_x_coords, self._J_coords[:, 1] - self._n_shared_diffs - self._width_step_derivative)
+        if relative_steps is not None:
+            # Full dense indices. Subtracting the influence of shared vars
+            present_indices = self._J_coords[~self._J_shared, 1] - self._n_shared_diffs * len(relative_steps)
+            resolved_coords = (np.arange(self._width_step_derivative) + (relative_steps * self._width_step_derivative)[:, None]).reshape((-1,))
+            J_x_coords = resolved_coords[present_indices]
+        else:
+            # Subtracting the shared diffs because they will get added again
+            J_x_coords = self._J_coords[~self._J_shared, 1] - self._n_shared_diffs
+
+        # J_x_coords = (np.zeros(self._expr.shape[0], dtype=int)[None] + J_x_coords[:,None]).T.reshape((-1,))
+
+        # The series coordinates have nothing to do where we need them...
+        self._J_coords[~self._J_shared, 1] = J_x_coords + self._n_shared_diffs
         self._J_eval  = gm.VEval(self._J_sparse, self._eval_args)
         self._delta_t = delta_t
         self._weights = weights
@@ -282,7 +304,7 @@ class VectorizedLayout():
 
         if self._pad_steps > 0:
             series_pad = np.empty((series.shape[0] + self._pad_steps, series.shape[1]))
-            series_pad[:self._pad_steps] = series[0] if series_pad_values is None else series_pad_values
+            series_pad[:self._pad_steps] = series[0] if series_pad_values is None else series_pad_values[:self._pad_steps] # TODO: THIS IS UNSTABLE
             series_pad[self._pad_steps:] = series
         else:
             series_pad = series
@@ -876,7 +898,6 @@ try:
         @property
         def bounds(self) -> np.ndarray:
             return self._nlp.getBounds()
-
 
 except (ModuleNotFoundError, ImportError) as e:
     class RAI_NLP():

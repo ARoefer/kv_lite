@@ -8,6 +8,7 @@ from .graph import DirectedEdge
 from . import spatial as gm
 from .graph import Graph,        \
                    Frame,        \
+                   FrameView,    \
                    DirectedEdge
 
 
@@ -62,8 +63,8 @@ class ConstrainedTransformEdge(ConstrainedEdge):
 
 
 class Model(Graph):
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, root_node='world') -> None:
+        super().__init__(root_node=root_node)
         self._constraints = {}
         self._symbol_constraint_map = {}
 
