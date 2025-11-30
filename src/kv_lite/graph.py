@@ -226,3 +226,17 @@ class Graph():
 
         return out
 
+    def get_root(self, start : str, filter : set[str]=None, return_path : bool=False) -> str | list[str]:
+        # The node is disconnected
+        if start not in self._nodes:
+            raise KeyError(f'Unknown node {start}')
+
+        if start not in self._incoming_edges:
+            return [start] if return_path else start
+        
+        e = self._incoming_edges[start]
+        # End of recursion because of filter
+        if filter is not None and e.parent not in filter:
+            return [start] if return_path else start
+        out = self.get_root(e.parent, filter, return_path=return_path)
+        return out + [start] if return_path else out
