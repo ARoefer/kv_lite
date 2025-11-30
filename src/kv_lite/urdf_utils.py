@@ -98,6 +98,68 @@ class URDFObject():
     def joints_by_symbols(self) -> dict[gm.KVSymbol, str]:
         return {j.position: jn for jn, j in self.dynamic_joints.items()}
 
+    def add_joints(self, joints : list[str | Path] | dict[str, URDFJoint]) -> "URDFObject":
+        """Adds the given joints to the abstraction of this URDF object.
+           Joints can either be given as names of existing edges, or as 
+           dictionary of edges to be added to the model. In either case,
+           the joints are expected to be instances of URDFJoint.
+
+        Args:
+            joints (list[str] | dict[str, URDFJoint]): Joints either as names of edges or new edges.
+
+        Returns:
+            URDFObject: URDF Object which includes the new edges.
+        """
+        if len(joints) == 0:
+            return URDFObject(self._model, self._name, self._links, self._joints, self._root)
+        
+        # We expect joints to be an iterable of references
+        if not isinstance(joints, dict):
+            if len(already_defined:=[jp for jp in joints if jp in self._joints.values()]) > 0:
+                raise ValueError(f'The follwoing joints are already part of {self._name}: {already_defined}')
+
+            if len(missing:=[j for j in joints if not self._model.has_edge(j)]) > 0:
+                raise ValueError(f'Cannot add non-existent edges: {missing}')
+            new_joints = {(j if isinstance(j, str) else j.stem): (Path(j), self._model.get_edge(j)) for j in joints}
+        else:
+            if len(already_defined:=[jp for jp in joints.keys() if jp in self._joints.keys()]) > 0:
+                raise ValueError(f'The follwoing joints are already part of {self._name}: {already_defined}')
+
+            new_joints = {jn: (Path(self._name) / jn, j) for jn, j in joints.items()}
+            for jp, j in new_joints.values():
+                self._model.add_edge(j, jp)
+        
+        if len(non_urdf:=[jn for jn, (_, j) in new_joints.items() if not isinstance(j, URDFJoint)]) > 0:
+            raise ValueError(f'Some of the joints are not derived from URDFJoint: {non_urdf}')
+
+        updated_links = self._links.copy()
+        for jp, j in new_joints.values():
+            if j.parent not in updated_links.values():
+                updated_links[j.parent.stem] = j.parent
+            if j.child not in updated_links.values():
+                updated_links[j.child.stem] = j.child
+
+        all_links  = dict(sum([list(self._links.items()), list(updated_links.items())], []))
+        remaining_root_query = set(all_links.values())
+        shared_root = None
+        while len(remaining_root_query) > 0:
+            link = next(iter(remaining_root_query))
+            root_path = self._model.get_root(link, set(all_links.values()), return_path=True)
+            if shared_root is None:
+                shared_root = root_path[0]
+            elif shared_root != root_path[0]:
+                raise ValueError(f'Discovered separate roots: {shared_root} and {root_path[0]}')
+            remaining_root_query -= set(root_path)
+
+        all_joints  = dict(sum([list(self._joints.items()), 
+                                [(jn, jp) for jn, (jp, _) in new_joints.items()]], []))
+
+        return URDFObject(self._model,
+                          self._name,
+                          all_links,
+                          all_joints,
+                          dict(zip(all_links.values(), all_links.keys()))[shared_root])
+
     def get_link(self, name : str) -> Frame:
         return self._model.get_frame(self._links[name])
     
