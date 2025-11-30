@@ -136,6 +136,7 @@ class URDFObject():
 
                 low, high, _ = most_constant_constraint
                 q_lim[x] = low, high
+        q_lim.setflags(write=False)
         return q_lim
 
     @cached_property
@@ -161,6 +162,7 @@ class URDFObject():
 
                 low, high, _ = most_constant_constraint
                 q_lim[x] = low, high
+        q_lim.setflags(write=False)
         return q_lim
 
 
