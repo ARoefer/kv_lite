@@ -192,6 +192,9 @@ class Graph():
 
         del self._incoming_edges[child]
 
+    def has_edge(self, name : str) -> bool:
+        return name in self._named_edges
+
     def get_edge(self, name : str) -> DirectedEdge:
         if name not in self._named_edges:
             raise KeyError(f'Edge "{name}" is not in graph.')
