@@ -644,7 +644,8 @@ try:
                 self.set_constants(constants)
 
             self._logging_active = False
-            self._log = None
+            self._log   = None
+            self._log_x = []
             
             self._pads = None
             if pads is not None:
@@ -653,26 +654,6 @@ try:
             self._init = None
             if init is not None:
                 self.set_init(init)
-
-        @property
-        def active_symbols(self) -> frozenset[gm.KVSymbol]:
-            return self._layout.active_symbols
-
-        @property
-        def active_shared_symbols(self) -> frozenset[gm.KVSymbol]:
-            return self._layout.active_shared_symbols
-
-        @property
-        def active_series_symbols(self) -> frozenset[gm.KVSymbol]:
-            return self._layout.active_series_symbols
-
-        @property
-        def series_symbols(self) -> gm.KVArray:
-            return self._layout.series_symbols
-        
-        @property
-        def shared_symbols(self) -> gm.KVArray:
-            return self._layout.shared_symbols
 
         @property
         def active_symbols(self) -> frozenset[gm.KVSymbol]:
@@ -699,6 +680,11 @@ try:
             """All symbols shared across time steps."""
             return self._layout.shared_symbols
 
+        @cached_property
+        def in_symbols(self) -> gm.KVArray:
+            """All symbols needed to evaluate a point."""
+            return self._layout.in_symbols
+
         @property
         def n_series_steps(self) -> int:
             """Number of time steps in the series."""
@@ -711,17 +697,19 @@ try:
         def reset_log(self):
             """Clear the last log and activate the logging feature."""
             self._logging_active = True
-            self._log = None
+            self._log   = None
+            self._log_x = []
 
         @property
-        def log(self) -> dict[str, np.ndarray]:
+        def log(self) -> tuple[dict[gm.KVSymbol, np.ndarray], dict[str, np.ndarray]]:
             """If logging is active, this log holds the stacked layout
             outputs of all evaluations since the last call of `self.reset_log()`.
 
             Returns:
-                dict[str, np.ndarray]: Layout outputs {str: (E, *)} where is the number of calls to `evaluate`.
+                tuple[np.ndarray, dict[str, np.ndarray]]: Evaluated points X {str: (E)} and layout outputs {str: (E, *)}
+                                                          where `E` is the number of calls to `evaluate`.
             """
-            return self._log
+            return dict(zip(self.in_symbols, np.vstack(self._log_x).T)), self._log
 
         def set_init(self, new_init : np.ndarray | dict[gm.KVSymbol, float | np.ndarray]):
             """Sets a new initial sample that the optimizer can query."""
@@ -754,7 +742,8 @@ try:
             self._X_CACHE[self._layout.diff_mask] = x
             phi, J = self._layout.eval_all(self._X_CACHE, self._pads)
             if self._logging_active:
-                log = self._layout.report(self._X_CACHE)
+                self._log_x.append(self._X_CACHE.copy())
+                log = self._layout.report(self._log_x[-1])
                 if self._log is None:
                     self._log = log
                 else:

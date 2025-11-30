@@ -46,6 +46,7 @@ from .math import KVExpr, \
                   vstack, \
                   hstack, \
                   stack, \
+                  concatenate, \
                   min, \
                   max, \
                   EvaluationError

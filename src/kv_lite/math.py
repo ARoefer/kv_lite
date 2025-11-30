@@ -696,6 +696,10 @@ def vstack(tup):
 def stack(arrays, axis):
     return KVArray(np.stack(arrays, axis))
 
+def concatenate(arrays, axis):
+    return KVArray(np.concatenate(arrays, axis))
+
+
 def diag_view(a, writeable=False):
     """Presents a view of the diagonal of an array.
        Given an array of (*, N, N) will return a view (*, N).
