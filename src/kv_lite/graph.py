@@ -151,6 +151,9 @@ class Graph():
         if edge.child not in self._nodes:
             raise KeyError(f'Cannot insert edge as {edge.child} is not a node in the graph')
 
+        if edge.child == edge.parent:
+            raise ValueError(f'Cannot create edges of a node to itself. Attempted on: {edge.child}')
+
         if name is not None and name in self._named_edges:
             raise KeyError(f'Cannot insert named edge as "{name}", as name is already taken.')
 
