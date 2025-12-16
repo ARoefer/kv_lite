@@ -59,12 +59,15 @@ class URDFObject():
                        name   : str,
                        links  : dict[str, Path],
                        joints : dict[str, Path],
-                       root   : str) -> None:
+                       root   : str,
+                       /,
+                       urdf_str : str=None) -> None:
         self._model  = model
         self._name   = name
         self._links  = links
         self._joints = joints
         self._root   = root
+        self._urdf_str = urdf_str
 
     @property
     def model(self) -> Model:
@@ -77,6 +80,10 @@ class URDFObject():
     @property
     def root_link(self) -> str:
         return self._root
+
+    @property
+    def urdf_str(self) -> str | None:
+        return self._urdf_str
 
     @property
     def name(self) -> str:
