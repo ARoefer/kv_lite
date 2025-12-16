@@ -57,6 +57,11 @@ class Graph():
 
         self._nodes[root_node] = Frame(root_node)
 
+    def reset_root(self, name : str):
+        if name not in self._nodes:
+            raise KeyError(f'Cannot make unknown frame {name} root.')
+        self._root_node = name
+
     @property
     def root_node(self) -> str:
         return self._root_node
