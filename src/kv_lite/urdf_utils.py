@@ -233,6 +233,22 @@ class URDFObject():
                 q_lim[x] = low, high
         q_lim.setflags(write=False)
         return q_lim
+    
+    def make_full_joint_dict(self, partial_state : dict[str, float]) -> dict[gm.KVSymbol, float]:
+        """Turns a partial joint state given only by joint names into a full state over
+           all joint position symbols. The unknown position values are set to the
+           value closest to 0 which is within the joints' limits.
+
+        Args:
+            partial_state (dict[str, float]): Joint state as joint name -> position.
+
+        Returns:
+            dict[gm.KVSymbol, float]: Joint position symbols -> values for *all* joints.
+        """
+        q_limits = dict(zip(self.q, self.q_limit))
+        if isinstance(next(iter(partial_state.keys())), str):
+            return {js: np.clip(partial_state.get(jn, 0.0), *q_limits.get(js, (-1e6, 1e6))) for js, jn in self.joints_by_symbols.items()}
+        return {js: np.clip(partial_state.get(js, 0.0), *q_limits.get(js, (-1e6, 1e6))) for js, _ in self.joints_by_symbols.items()}
 
 
 def _parse_origin_node(on : ET.Element):
@@ -413,5 +429,5 @@ def load_urdf(model : Model, urdf : str, name=None, use_visual_as_collision=True
     if len(roots) > 1:
         raise RuntimeError(f'URDF has more than root. Candidates:\n  {roots}')
 
-    return URDFObject(model, name, links, joints, roots[0])
+    return URDFObject(model, name, links, joints, roots[0], urdf_str=urdf)
 
