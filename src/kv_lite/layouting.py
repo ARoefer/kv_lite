@@ -94,7 +94,7 @@ class VectorizedLayout():
             # At this step these are relative time offsets, not indices in the input series.
             self._step_reorder -= self._step_reorder.min()
             # Densifying the indices to match the expected input.
-            self._step_reorder  = np.unique(self._step_reorder, return_inverse=True)[1]
+            self._step_reorder  = np.unique(self._step_reorder, return_inverse=True)[1].reshape((len(self._t_steps), -1))
             if (relative_steps[relative_steps != 0] >= -self._order).any():
                 raise ValueError(f'Stride overlaps with higher-order. This is not permitted.')
 
