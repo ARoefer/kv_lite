@@ -77,7 +77,7 @@ def retime_spline(spline : np.ndarray,
     t_peaks = np.clip((roots_1 + roots_2) / 2, 0, 1)
     # If a is zero, there's a second solution
     t_peaks[a == 0] = np.clip((-c / b)[a == 0], 0, 1)
-    t_peaks[(a == 0) & (b == 0)] = 0
+    t_peaks[np.isnan(t_peaks)] = 0
 
     # Evaluating the peak_vels in each interval
     peak_vels = t_peaks**2*a + t_peaks*b + vels[:-1]
@@ -221,7 +221,8 @@ try:
         def getInitializationSample(self):
             # K velocities
             init = np.ones((self._path.shape[0] - 1,  self._path.shape[1] + 1))
-            init[:, 1:] = self._path[1:] - self._path[:-1]
+            low_vel_bounds, high_vel_bounds = self._full_limits.T[:, 1:1+self._path.shape[1]]
+            init[:, 1:] = np.clip(self._path[1:] - self._path[:-1], low_vel_bounds, high_vel_bounds)
 
             return init.flatten()[:-self._path.shape[1]] # Removing v_K
 
@@ -254,7 +255,7 @@ try:
         solver_return = solver.solve(0, verbose=verbose)
         
         taus = solver_return.x[::path.shape[1] + 1]
-        stamps = np.cumsum(taus)
+        stamps = np.hstack(((0.0,), np.cumsum(taus)))
         inner_velocities = solver_return.x[:-1].reshape((path.shape[0] - 2, -1))[:, 1:]
         full_velocities  = np.vstack((np.zeros(path.shape[1]),
                                     inner_velocities,
