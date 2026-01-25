@@ -39,7 +39,7 @@ class Objective:
                 self.weight = None
             else:
                 weight = kv.ones(self.expr.shape)
-                self.weight = weight / self.weight
+                self.weight = weight * self.weight
 
     @property
     def ndim(self) -> int:
@@ -72,8 +72,11 @@ def _build_objective_matrix(objectives : dict[str, Objective],
     
     if soft_dims > 0:
         right_col = kv.vstack((kv.zeros((len(left_col_blocks) - soft_dims, soft_dims)),
-                            kv.diag(kv.hstack([o.weight for o in objectives.values() if o.is_soft]))))
+                               kv.eye(sum([o.ndim for o in objectives.values() if o.is_soft]))))
+        diag_weights = kv.hstack([o.weight for o in objectives.values() if o.is_soft])
         M = kv.hstack((M, right_col))
+    else:
+        diag_weights = None
 
     V = kv.hstack([o.gain for o in objectives.values()])
 
@@ -83,7 +86,7 @@ def _build_objective_matrix(objectives : dict[str, Objective],
         objective_ranges[on] = (start, start + o.ndim - 1)
         start = start + o.ndim
 
-    return M, V, objective_ranges, soft_dims
+    return M, V, objective_ranges, soft_dims, diag_weights
 
 
 class QPController:
@@ -112,19 +115,22 @@ class QPController:
 
         # 
         if len(self._eq_objectives) > 0:
-            self._A, self._b, _, A_softdims = _build_objective_matrix(self._eq_objectives, control_symbols)
+            self._A, self._b, _, A_softdims, A_softweights = _build_objective_matrix(self._eq_objectives, control_symbols)
         else:
-            self._A, self._b, A_softdims = None, None, 0
+            self._A, self._b, A_softdims, A_softweights = None, None, 0, None
 
         if len(self._ineq_objectives) > 0:
-            self._G, self._h, _, G_softdims = _build_objective_matrix(self._ineq_objectives, control_symbols, slack_padding=A_softdims)
+            self._G, self._h, _, G_softdims, G_softweights = _build_objective_matrix(self._ineq_objectives, control_symbols, slack_padding=A_softdims)
         else:
-            self._G, self._h, G_softdims = None, None, 0
+            self._G, self._h, G_softdims, G_softweights = None, None, 0, None
 
         if self._A is not None and G_softdims > 0:
             self._A = kv.hstack((self._A, kv.zeros((len(self._A), G_softdims))))
 
-        self._costs = kv.diag([control_costs.get(v, default_control_cost) for v in control_symbols] + [1]*(A_softdims + G_softdims))
+        self._costs = kv.diag(kv.hstack(([control_costs.get(v, default_control_cost) for v in control_symbols],
+                                         (A_softweights if A_softweights is not None else []),
+                                         (G_softweights if G_softweights is not None else []),
+                                        )))
         self._q_vel_limits = np.vstack([dict(zip(robot.q, robot.q_dot_limit)).get(s, [-1e6, 1e6]) for s in self._control_symbols])
         self._q_pos_limits = np.vstack([dict(zip(robot.q, robot.q_limit)).get(s, [-1e6, 1e6])     for s in self._control_symbols])
         self._x_limits     = np.vstack([self._q_vel_limits, [[-1e6, 1e6]]*(G_softdims + A_softdims)])
@@ -168,6 +174,8 @@ class QPController:
             q[:len(q_pos)] = (q_pos - self._regularization_target) * self._regularization_weight
             q[~self._has_reg_target] = 0
 
+        P = self._costs(q_obs)
+
         A = self._A(q_obs) if self._A is not None else None
         b = self._b(q_obs) if self._b is not None else None
         
@@ -185,7 +193,7 @@ class QPController:
             limits.T[0, :len(self._control_symbols)] = np.max((limits.T[0, :len(self._control_symbols)], pos_limit_gap.T[0]), axis=0)
             limits.T[1, :len(self._control_symbols)] = np.min((limits.T[1, :len(self._control_symbols)], pos_limit_gap.T[1]), axis=0)
 
-        x_dot = solve_qp(P=self._costs, q=q,
+        x_dot = solve_qp(P=P, q=q,
                          A=A, b=b, G=G, h=h,
                          lb=limits.T[0],
                          ub=limits.T[1],
@@ -195,6 +203,12 @@ class QPController:
         self._last_x_dot = x_dot
         return dict(zip(self._control_symbols, x_dot))
     
+    def eval_objectives(self, q_obs : dict[kv.Symbol, float]) -> dict[str, np.ndarray]:
+        out = {}
+        for n, o in list(self._eq_objectives.items()) + list(self._ineq_objectives.items()):
+            out[n] = o.expr(q_obs)
+        return out
+
     def is_satisfied(self, tol=1e-4) -> bool:
         if self._last_x_dot is None:
             return False
