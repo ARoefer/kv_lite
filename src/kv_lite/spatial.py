@@ -182,7 +182,7 @@ class Transform:
     @staticmethod
     def inverse(tf):
         inv = eye(4)
-        inv = inv.astype(object) if tf.is_symbolic else inv
+        inv = inv.astype(object) if isinstance(tf, KVArray) and tf.is_symbolic else inv
         inv[..., :3, :3] = tf[..., :3, :3].T
         inv[..., :3,  3] = -inv[..., :3, :3].dot(tf[..., :3, 3])
         return inv
