@@ -57,6 +57,11 @@ class Graph():
 
         self._nodes[root_node] = Frame(root_node)
 
+    def reset_root(self, name : str):
+        if name not in self._nodes:
+            raise KeyError(f'Cannot make unknown frame {name} root.')
+        self._root_node = name
+
     @property
     def root_node(self) -> str:
         return self._root_node
@@ -151,6 +156,9 @@ class Graph():
         if edge.child not in self._nodes:
             raise KeyError(f'Cannot insert edge as {edge.child} is not a node in the graph')
 
+        if edge.child == edge.parent:
+            raise ValueError(f'Cannot create edges of a node to itself. Attempted on: {edge.child}')
+
         if name is not None and name in self._named_edges:
             raise KeyError(f'Cannot insert named edge as "{name}", as name is already taken.')
 
@@ -189,6 +197,9 @@ class Graph():
 
         del self._incoming_edges[child]
 
+    def has_edge(self, name : str) -> bool:
+        return name in self._named_edges
+
     def get_edge(self, name : str) -> DirectedEdge:
         if name not in self._named_edges:
             raise KeyError(f'Edge "{name}" is not in graph.')
@@ -220,3 +231,17 @@ class Graph():
 
         return out
 
+    def get_root(self, start : str, filter : set[str]=None, return_path : bool=False) -> str | list[str]:
+        # The node is disconnected
+        if start not in self._nodes:
+            raise KeyError(f'Unknown node {start}')
+
+        if start not in self._incoming_edges:
+            return [start] if return_path else start
+        
+        e = self._incoming_edges[start]
+        # End of recursion because of filter
+        if filter is not None and e.parent not in filter:
+            return [start] if return_path else start
+        out = self.get_root(e.parent, filter, return_path=return_path)
+        return out + [start] if return_path else out

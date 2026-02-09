@@ -587,8 +587,11 @@ class KVArray(np.ndarray):
             return self.copy()
 
         if self._function is None:
-            flat_f = [e._ca_data if isinstance(e, KVExpr) else e for e in self.flatten()]
-            self._function = _speed_up(_Matrix(flat_f), self.ordered_symbols, self.shape)
+            if self.is_symbolic:
+                flat_f = [e._ca_data if isinstance(e, KVExpr) else e for e in self.flatten()]
+                self._function = _speed_up(_Matrix(flat_f), self.ordered_symbols, self.shape)
+            else:
+                self._function = lambda _: self.astype(float, subok=False)
         return self._function(args)
 
     def unchecked_eval(self, args : np.ndarray) -> np.ndarray:

@@ -27,6 +27,7 @@ dependencies = [
 ros = ["jinja2", "scipy>=1.14.0"]
 vis = ["pyvis"]
 rai = ["robotic"]
+qp  = ["qpsolvers[open_source_solvers]"]
 
 [project.urls]
 Homepage = "https://github.com/ARoefer/kv_lite"
