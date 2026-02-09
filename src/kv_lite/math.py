@@ -441,7 +441,7 @@ def Snap(name, prefix=None, stamp : int=None):
     return KVSymbol(name, KVSymbol.TYPE_SNAP, prefix, stamp)
 
 def is_symbolic(v) -> bool:
-    return v.is_sybolic if isinstance(v, KVExpr) or isinstance(v, KVArray) else False
+    return v.is_symbolic if isinstance(v, KVExpr) or isinstance(v, KVArray) else False
 
 def _find_array_shape(nl):
     if isinstance(nl, list) or isinstance(nl, tuple):
@@ -710,6 +710,7 @@ def diag_view(a, writeable=False):
     return np.lib.stride_tricks.as_strided(a,
                                            a.shape[:-1],
                                            a.strides[:-2] + (sum(a.strides[-2:]),),
+                                           subok=True,
                                            writeable=writeable)
 
 trace = np.trace

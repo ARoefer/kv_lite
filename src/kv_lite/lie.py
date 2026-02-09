@@ -40,6 +40,8 @@ class SO3:
         R  = R[..., :3, :3]
         tr = (kv.diag_view(R).sum(axis=-1) - 1) / 2
         # min for inaccuracies near identity yielding trace > 3
+        if not kv.is_symbolic(tr):  # Avoiding Floating-point nastyness
+            tr = np.clip(tr, -1, 1)
         theta = kv.acos(tr)
         if isinstance(theta, np.ndarray):
             theta = theta[..., None]
@@ -94,6 +96,14 @@ class SE3:
             out = out.astype(object)
         out[:3, :3] = R
         out[:3,  3] = (w_cross - R @ w_cross + t_parallel) / (theta_sq + epsilon)
+
+        # double A;  // A = sin(theta) / theta
+        # double B;  // B = (1 - cos(theta))
+        # double C;  // (1 - A) / theta^2
+
+        # Wv = omega X v
+        # WWv = omega X (omega X v)
+        # return v - B * Wv + C * WWv;
 
         return out
 
