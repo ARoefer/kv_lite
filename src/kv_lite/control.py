@@ -6,6 +6,7 @@ from enum        import Enum
 try:
     from qpsolvers   import solve_qp
 except ModuleNotFoundError as NO_QPSOLVERS:
+    _NO_QPSOLVERS = NO_QPSOLVERS
     solve_qp = None
 
 
@@ -104,7 +105,7 @@ class QPController:
                        lambda_damping : float=0,
                        solver : str='daqp'):
         if solve_qp is None:
-            raise ImportError(f'You do not have the "qpsolvers" package installed. Original exception: {NO_QPSOLVERS}')
+            raise ImportError(f'You do not have the "qpsolvers" package installed. Original exception: {_NO_QPSOLVERS}')
 
         self._robot  = robot
         self._solver = solver
