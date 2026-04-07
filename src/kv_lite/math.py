@@ -198,7 +198,7 @@ class KVExpr():
         return KVExpr(self._ca_data * other)
 
     def __rtruediv__(self, other):
-        return self.__div__(other)
+        return self.__rdiv__(other)
 
     def __rdiv__(self, other):
         if isinstance(other, KVExpr):
