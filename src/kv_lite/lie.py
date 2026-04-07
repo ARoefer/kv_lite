@@ -111,12 +111,11 @@ class SE3:
     def logmap(mat : np.ndarray, epsilon=1e-6) -> np.ndarray:
         w = SO3.logmap(mat, epsilon=epsilon)
         theta = kv.norm(w) + epsilon
-        S = _skew(w) 
+        S = _skew(w)
 
-        Ginv = (kv.eye(3)
-                - S / 2
-                + (1 / theta - 1 / kv.tan(theta / 2) / 2) / theta * S @ S
-               )
+        # Left-Jacobian of SO3
+        V_inv = kv.eye(3) - (S / 2) + (1 / (theta**2) - kv.sin(theta) / (2 * theta * (1 - kv.cos(theta)))) * (S @ S)
+
         t = mat[:3, 3]
-        v = Ginv @ t
+        v = V_inv @ t
         return kv.hstack((w, v))
