@@ -104,6 +104,37 @@ class QPController:
                        regularization_target : dict[kv.Symbol, float]=None,
                        lambda_damping : float=0,
                        solver : str='daqp'):
+        """Instantiates a new QP-controller. 
+
+        Args:
+            robot (urdf.URDFObject): Robot object which is meant to be controlled.
+            objectives (dict[str, Objective]): Named objectives to satisfy. Objectives with a weight != None
+                                               will be interpreted as soft-objectives and receive a weighted
+                                               slack variable. 
+            control_symbols (list[kv.KVSymbol]): List of symbols to produce velocity values for.
+            control_costs (dict[kv.KVSymbol]): Cost of using individual controls to satisfy problem.
+            default_control_cost (float, optional): Default cost of control. Implicitly steady error of soft objectives.
+                                                    Defaults to 0.1.
+            dampening_factor (float, optional): Limits the range of the next inferred command to
+                                                a fraction of the velocity limits. Functions like a
+                                                curde acceleration limit. Defaults to None.
+            vel_bound_scale (float, optional): Overall scaling factor to limit the maximum velocity. Defaults to 1.0.
+            position_integration_factor (float, optional): Expected time in seconds between updates.
+                                                           If given, reduces the velocity commands to not overshoot
+                                                           the position limits in this horizon. Defaults to None.
+            regularization_weight (dict[kv.Symbol, float] | float, optional): Enables a regularization towards a target
+                                                                              position. Defaults to None.
+            regularization_target (dict[kv.Symbol, float], optional): Overrides default regularization target which is
+                                                                      the center of the position limits. Defaults to None.
+            lambda_damping (float, optional): If given, controls the scale of a regularization towards
+                                              the last generated command. Defaults to 0.
+            solver (str, optional): Name of the solver to use. Can be anything
+                                    that can be loaded from `qpsolvers`. Defaults to 'daqp'.
+
+        Raises:
+            ImportError: When `qpsolvers` is not installed.
+            ValueError: If a regularization target is given without a weight.
+        """        """"""
         if solve_qp is None:
             raise ImportError(f'You do not have the "qpsolvers" package installed. Original exception: {_NO_QPSOLVERS}')
 
@@ -196,12 +227,24 @@ class QPController:
         self._last_q     = None
 
     def last_objective_costs(self) -> dict[str, np.ndarray]:
+        """Returns the results of the last evaluation."""
         if self._last_P is None:
             raise ValueError('Need to eval at least once.')
         
         return {n: self._last_P[m, m] for n, m in self._objective_cost_masks.items()}
 
     def eval(self, q_obs : dict[kv.Symbol, float]) -> dict[kv.Symbol, float]:
+        """Produces a new velocity command, given current observations.
+
+        Args:
+            q_obs (dict[kv.Symbol, float]): State observation.
+
+        Raises:
+            ValueError: If QP-solver does not produce a solution.
+
+        Returns:
+            dict[kv.Symbol, float]: Map of command symbols to commands.
+        """
         # (J(EE_vel))
         if self._last_x_dot is None:
             self._last_x_dot = np.zeros(len(self._x_limits))
@@ -253,12 +296,16 @@ class QPController:
         return dict(zip(self._control_symbols, x_dot))
     
     def eval_objectives(self, q_obs : dict[kv.Symbol, float]) -> dict[str, np.ndarray]:
+        """Evaluates all registered objectives given a state observation."""
         out = {}
         for n, o in list(self._eq_objectives.items()) + list(self._ineq_objectives.items()):
             out[n] = o.expr(q_obs)
         return out
 
     def is_satisfied(self, tol=1e-4) -> bool:
+        """Short-hand to check if all objectives were satisfied by the last command
+           to within tolerance.
+        """
         if self._last_x_dot is None:
             return False
         return (np.abs(self._last_x_dot) <= tol).all()
