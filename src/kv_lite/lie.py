@@ -53,6 +53,23 @@ class SO3:
         skw = (R - R.transpose(dim_names[:-2] + dim_names[-2:][::-1])) / (2 * st + epsilon)
         return _unskew(skw) * theta
 
+    @staticmethod
+    def J_right(w, theta=None, epsilon=1e-6) -> kv.KVArray:
+        if theta is None:
+            theta = kv.norm(w) + epsilon
+        S = _skew(w)
+
+        # Right-Jacobian of SO3
+        return kv.eye(3) - ((1 - kv.cos(theta)) / theta**2) * S + ((theta - kv.sin(theta)) / theta**3) * S @ S
+
+    @staticmethod
+    def J_left(w, theta=None, epsilon=1e-6) -> kv.KVArray:
+        if theta is None:
+            theta = kv.norm(w) + epsilon
+        S = _skew(w)
+
+        # Right-Jacobian of SO3
+        return kv.eye(3) - (S / 2) + (1 / (theta**2) - kv.sin(theta) / (2 * theta * (1 - kv.cos(theta)))) * (S @ S)
 
 
 class SE3:
@@ -110,12 +127,7 @@ class SE3:
     @staticmethod
     def logmap(mat : np.ndarray, epsilon=1e-6) -> np.ndarray:
         w = SO3.logmap(mat, epsilon=epsilon)
-        theta = kv.norm(w) + epsilon
-        S = _skew(w)
-
-        # Left-Jacobian of SO3
-        V_inv = kv.eye(3) - (S / 2) + (1 / (theta**2) - kv.sin(theta) / (2 * theta * (1 - kv.cos(theta)))) * (S @ S)
 
         t = mat[:3, 3]
-        v = V_inv @ t
+        v = SO3.J_left(w, epsilon=epsilon) @ t
         return kv.hstack((w, v))
