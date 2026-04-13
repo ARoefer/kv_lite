@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from pathlib     import Path
 from typing      import Any, \
                         Iterable, \
                         List, \
@@ -20,16 +21,19 @@ class DirectedEdge():
 class Frame:
     name : str
 
+    def __post_init__(self):
+        self.name = Path(self.name)
+
 
 class FrameView():
     """Presents a view of a frame with changed reference and transform."""
-    def __init__(self, frame : Frame, reference : str, transform : gm.KVArray) -> None:
+    def __init__(self, frame : Frame, reference : Path, transform : gm.KVArray) -> None:
         self._frame = frame
         self.reference = reference
         self.transform = transform
     
     @property
-    def name(self) -> str:
+    def name(self) -> Path:
         return self._frame.name
     
     @property
@@ -48,7 +52,7 @@ class FKChainException(Exception):
 
 
 class Graph():
-    def __init__(self, root_node='world') -> None:
+    def __init__(self, root_node=Path('world')) -> None:
         self._nodes = {}
         self._incoming_edges  = {}
         self._named_edges     = {}
@@ -83,15 +87,15 @@ class Graph():
     def get_frames(self) -> List[str]:
         return list(self._nodes.keys())
 
-    def get_frame(self, name : str) -> Frame:
+    def get_frame(self, name : Path) -> Frame:
         if name not in self._nodes:
             raise KeyError(f'Unknown frame "{name}"')
         return self._nodes[name]
     
-    def has_frame(self, name : str) -> bool:
+    def has_frame(self, name : Path) -> bool:
         return name in self._nodes
 
-    def get_fk(self, target_frame : str, source_frame : str = 'world'):
+    def get_fk(self, target_frame : str, source_frame : str = Path('world')):
         if target_frame not in self._nodes:
             raise KeyError(f'Target frame "{target_frame}" is not known.')
         
@@ -149,7 +153,7 @@ class Graph():
         
         raise FKChainException(f'Cannot look up {source_frame} T {target_frame}: The frames have different roots {p_target[-1].parent} and {p_source[-1].parent}')
     
-    def add_edge(self, edge : DirectedEdge, name : str=None):
+    def add_edge(self, edge : DirectedEdge, name : Path=None):
         if edge.parent not in self._nodes:
             raise KeyError(f'Cannot insert edge as {edge.parent} is not a node in the graph')
 
@@ -197,10 +201,10 @@ class Graph():
 
         del self._incoming_edges[child]
 
-    def has_edge(self, name : str) -> bool:
+    def has_edge(self, name : Path) -> bool:
         return name in self._named_edges
 
-    def get_edge(self, name : str) -> DirectedEdge:
+    def get_edge(self, name : Path) -> DirectedEdge:
         if name not in self._named_edges:
             raise KeyError(f'Edge "{name}" is not in graph.')
         return self._named_edges[name]
@@ -208,7 +212,7 @@ class Graph():
     def get_edges(self) -> List[DirectedEdge]:
         return list(self._incoming_edges.values())
 
-    def get_incoming_edge(self, node_name : str) -> DirectedEdge:
+    def get_incoming_edge(self, node_name : Path) -> DirectedEdge:
         if node_name not in self._nodes:
             raise KeyError(f'Unknown frame "{node_name}".')
         
@@ -220,7 +224,7 @@ class Graph():
             tf = e.eval(self, tf)
         return tf
 
-    def _get_path(self, start : str, end : str):
+    def _get_path(self, start : Path, end : Path):
         out = []
         current = start
         
@@ -231,7 +235,7 @@ class Graph():
 
         return out
 
-    def get_root(self, start : str, filter : set[str]=None, return_path : bool=False) -> str | list[str]:
+    def get_root(self, start : Path, filter : set[Path]=None, return_path : bool=False) -> Path | list[Path]:
         # The node is disconnected
         if start not in self._nodes:
             raise KeyError(f'Unknown node {start}')
