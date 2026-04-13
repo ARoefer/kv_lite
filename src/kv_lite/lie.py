@@ -63,12 +63,21 @@ class SO3:
         return kv.eye(3) - ((1 - kv.cos(theta)) / theta**2) * S + ((theta - kv.sin(theta)) / theta**3) * S @ S
 
     @staticmethod
-    def J_left(w, theta=None, epsilon=1e-6) -> kv.KVArray:
+    def J_right_inv(w, theta=None, epsilon=1e-6) -> kv.KVArray:
         if theta is None:
             theta = kv.norm(w) + epsilon
         S = _skew(w)
 
         # Right-Jacobian of SO3
+        return kv.eye(3) + 0.5 * S + (1/theta**2 - (1 + kv.cos(theta)) / (2 * theta * kv.sin(theta))) * S @ S
+
+    @staticmethod
+    def J_left(w, theta=None, epsilon=1e-6) -> kv.KVArray:
+        if theta is None:
+            theta = kv.norm(w) + epsilon
+        S = _skew(w)
+
+        # Left-Jacobian of SO3
         return kv.eye(3) - (S / 2) + (1 / (theta**2) - kv.sin(theta) / (2 * theta * (1 - kv.cos(theta)))) * (S @ S)
 
 
