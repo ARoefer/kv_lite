@@ -7,25 +7,11 @@ This package is the second attempt at implementing the *Kineverse* articulation 
 
 ## Installation
 
-The package is implemented as a ROS-package as it is mostly meant for the use in the robotics context, however, as of now (20th June 2023), it does not have a hard ROS dependency.
-
-Clone the repository - preferably to a ROS workspace - and install the requirements using `pip`:
+Install this package from PyPi:
 
 ```bash
-# In kv_lite
-pip install -r requirements.txt
+pip install kineverse
 ```
-
-In the case of ROS, build your workspace, reload it and you're good to go.
-
-### Additional Dependencies
-
-Some of the examples require additional packages. Currently it is
-
- - [roebots](https://github.com/ARoefer/roebots) a package collecting some utility functions for working with robotics. Used here for resolving ROS package paths without a running ROS core.
-
- - [prime_bullet](https://github.com/ARoefer/prime_bullet) an object-oriented wrapper for PyBullet which tries to offer a game-engine like interaction with the physics simulator.
-
 
 ## Usage
 
@@ -378,27 +364,30 @@ km.add_edge(kv.TransformEdge('world', windmill.root, kv.Transform.from_xyz(1, 0,
 wings_T_w = windmill.get_fk('wings')
 ```
 
-### Exponential Coordinates
+### SO3/SE3 Exponential Coordinates
 
-The current version of KV-lite includes an implementation of SO3/SE3 exponential maps transformations. This is just a brief overview of the existing functionality:
+The current version of KV-lite includes an implementation of SO3/SE3 exponential maps transformations. These have been validated against the implementations of [GTSAM](https://github.com/borglab/gtsam). They are accessible from the `SO3` and `SE3` classes:
 
 ```python
 import kv_lite as kv
 
-# Generate an exponential map transform
-tf = kv.exp.twist_to_se3(kv.vector3(1, 0, 0), 
-                         kv.vector3(0, 0, 1),
-                         kv.Position('q'))
+# Creating a symbolic rotation vector
+w = kv.KVArray([kv.Symbol(s) for s in 'rx ry rz'.split(' ')])
 
-print(tf)
+# Turning it into a full SO3 rotation matrix
+R = kv.SO3.expmap(w)
 
-# Create a model
-km = kv.Model()
-km.add_frame('foo')
+# And back to a rotation vector 
+w2 = kv.SO3.logmap(R)
 
-# We can also use the transform as an edge
-km.add_edge(kv.exp.TwistJointEdge(kv.vector3(1, 0, 0),
-                                  kv.vector3(0, 0, 1),
-                                  kv.Position('q')))
+# Creating a tangent vector
+v = kv.KVArray([kv.Symbol(s) for s in 'vx vy vz'.split(' ')])
 
+# Building a full SE3 transform
+T = kv.SE3.expmap(w, v)
+
+# And turn it back into an element of se3
+wv = kv.SE3.logmap(T)
 ```
+
+Note that all of these functions also support batch-dimensions. They also all have an `epsilon` parameter to avoid divisions by zero. In the case of non-symbolic inputs, the functions correctly identify these cases and do not require the `epsilon` parameter.
