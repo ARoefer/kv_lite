@@ -33,3 +33,6 @@ qp  = ["qpsolvers[open_source_solvers]"]
 Homepage = "https://github.com/ARoefer/kv_lite"
 Issues = "https://github.com/ARoefer/kv_lite/issues"
 
+[tool.pytest.ini_options]
+testpaths = ["test"]
+
