@@ -582,6 +582,18 @@ class KVArray(np.ndarray):
             return self.eval(args)
         return self.unchecked_eval(args)
 
+    def min(self, axis=None, out=None, keepdims=False, initial=np._NoValue, where=True):
+        if self.is_symbolic:
+            raise ValueError('KVArray.min() does not support symbolic arrays. '
+                             'Use kv_lite.min(arr, axis=...) instead.')
+        return super().min(axis=axis, out=out, keepdims=keepdims, initial=initial, where=where)
+
+    def max(self, axis=None, out=None, keepdims=False, initial=np._NoValue, where=True):
+        if self.is_symbolic:
+            raise ValueError('KVArray.max() does not support symbolic arrays. '
+                             'Use kv_lite.max(arr, axis=...) instead.')
+        return super().max(axis=axis, out=out, keepdims=keepdims, initial=initial, where=where)
+
     def eval(self, args : dict):
         if self.dtype != object:
             return self.copy()
@@ -740,21 +752,53 @@ def atan2(a, b):
     b = b._ca_data if isinstance(b, KVExpr) else b
     return KVExpr(ca.atan2(a, b))
 
-def min(a, b):
-    if isinstance(a, KVExpr):
-        return KVExpr(ca.mmin(_Matrix([a._ca_data, b])))
-    if isinstance(b, KVExpr):
-        a = a if isinstance(a, KVExpr) else KVExpr(ca.SX(b))
-        return KVExpr(ca.mmin(_Matrix([a, b._ca_data])))
-    return np.min((a, b))
 
-def max(a, b):
-    if isinstance(a, KVExpr):
-        return KVExpr(ca.mmax(_Matrix([a._ca_data, b])))
-    if isinstance(b, KVExpr):
-        a = a if isinstance(a, KVExpr) else KVExpr(ca.SX(b))
-        return KVExpr(ca.mmax(_Matrix([a, b._ca_data])))
-    return np.max((a, b))
+def _pooling_helper(f_pool : callable, array : KVArray, axis=None, keepdims=False):
+    if not isinstance(array, KVArray):
+        raise ValueError(f'This function only works for KVArrays. Given: {type(array)}')
+
+    if not array.is_symbolic:
+        raise ValueError(f'The given KVArray is not symbolic. We should not be here.')
+
+    if axis is None:
+        return KVExpr(f_pool(_Matrix([a._ca_data for a in array.flatten()])))
+
+    # It's easier to work with this if it's always iterable
+    axis = (axis,) if not isinstance(axis, (tuple, list)) else axis
+
+    # Moving all pooling axes to the back
+    other_axes = tuple([i for i in range(array.ndim) if i not in axis])
+    a = np.transpose(array, other_axes + axis)
+
+    # Reshape to 2D: (non-pooled dims..., pooled_size)
+    kept_shape = a.shape[:len(other_axes)]
+    pool_dim   = np.prod([array.shape[i] for i in axis])
+    a = a.reshape((-1, pool_dim))  # may copy here
+
+    # Pooling a 2D array
+    pooled = KVArray([KVExpr(f_pool(_Matrix([e._ca_data for e in row]))) for row in a])
+    if keepdims:
+        final_shape = tuple([array.shape[i] if i not in axis else 1 for i in range(array.ndim)])
+    else:
+        final_shape = kept_shape
+
+    return pooled.reshape(final_shape)
+
+
+def min(a, axis=None, keepdims=False) -> KVArray:
+    # Non-symbolic arrays are handled correctly by numpy
+    if not isinstance(a, KVArray) or not a.is_symbolic:
+        return np.min(a, axis=axis, keepdims=keepdims)
+    
+    return _pooling_helper(ca.mmin, a, axis=axis, keepdims=keepdims)
+
+def max(a, axis=None, keepdims=False) -> KVArray:
+    # Non-symbolic arrays are handled correctly by numpy
+    if not isinstance(a, KVArray) or not a.is_symbolic:
+        return np.max(a, axis=axis, keepdims=keepdims)
+    
+    return _pooling_helper(ca.mmax, a, axis=axis, keepdims=keepdims)
+
 
 sqrt = wrap_array(np.vectorize(lambda v: KVExpr(ca.sqrt(v._ca_data)) if isinstance(v, KVExpr) else np.sqrt(v)))
 abs  = wrap_array(np.vectorize(lambda v: KVExpr(ca.fabs(v._ca_data)) if isinstance(v, KVExpr) else np.abs(v)))
