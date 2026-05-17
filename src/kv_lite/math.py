@@ -412,6 +412,9 @@ class KVSymbol(KVExpr):
             return assignments[self]
         return self
 
+    def set_prefix(self, prefix : str) -> "KVSymbol":
+        return KVSymbol(name=self.name, typ=self.type, prefix=prefix, stamp=self.stamp)
+
     @classmethod
     def like(cls, array : np.ndarray, prefix='x') -> "KVArray":
         if isinstance(array, np.ndarray):

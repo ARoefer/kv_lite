@@ -256,3 +256,23 @@ class TestLike:
 
     def test_non_array_returns_prefix(self):
         assert KVSymbol.like('not_an_array', prefix='fallback') == 'fallback'
+
+
+class TestSetPrefix:
+    def test_returns_singleton_with_new_prefix(self):
+        assert Position('sp_q').set_prefix('new') is Position('sp_q', prefix='new')
+
+    def test_preserves_name(self):
+        assert Position('sp_q').set_prefix('p').name == 'sp_q'
+
+    def test_preserves_type(self):
+        assert Position('sp_q').set_prefix('p').type == KVSymbol.TYPE_POSITION
+
+    def test_preserves_stamp(self):
+        assert Position('sp_q', stamp=2).set_prefix('p').stamp == 2
+
+    def test_replaces_existing_prefix(self):
+        assert Position('sp_q', prefix='old').set_prefix('new') is Position('sp_q', prefix='new')
+
+    def test_removes_prefix_with_none(self):
+        assert Position('sp_q', prefix='p').set_prefix(None) is Position('sp_q')
