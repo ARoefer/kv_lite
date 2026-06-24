@@ -1,5 +1,6 @@
 from dataclasses import dataclass, \
                         field
+from pathlib     import Path
 from typing      import Iterable, \
                         Union
 
@@ -63,7 +64,7 @@ class ConstrainedTransformEdge(ConstrainedEdge):
 
 
 class Model(Graph):
-    def __init__(self, root_node='world') -> None:
+    def __init__(self, root_node=Path('world')) -> None:
         super().__init__(root_node=root_node)
         self._constraints = {}
         self._symbol_constraint_map = {}
