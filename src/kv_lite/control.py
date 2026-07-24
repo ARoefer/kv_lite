@@ -2,6 +2,7 @@ import numpy as np
 
 from dataclasses import dataclass
 from enum        import Enum
+from functools   import cached_property
 
 try:
     from qpsolvers   import solve_qp
@@ -190,7 +191,10 @@ class QPController:
 
         self._q_vel_limits = np.vstack([dict(zip(robot.q, robot.q_dot_limit)).get(s, [-1e6, 1e6]) for s in self._control_symbols]) * vel_bound_scale
         self._q_pos_limits = np.vstack([dict(zip(robot.q, robot.q_limit)).get(s, [-1e6, 1e6])     for s in self._control_symbols])
-        self._x_limits     = np.vstack([self._q_vel_limits, [[-1e6, 1e6]]*(G_softdims + A_softdims)])
+        if (extra_dims:=(G_softdims + A_softdims)) > 0:
+            self._x_limits = np.vstack([self._q_vel_limits, [[-1e6, 1e6]]*extra_dims])
+        else:
+            self._x_limits = self._q_vel_limits.copy()
 
         self._regularization_weight = regularization_weight
         if regularization_weight is not None:
@@ -202,8 +206,8 @@ class QPController:
                 self._regularization_weight = np.ones(len(self._control_symbols)) * regularization_weight
 
             if regularization_target is None:
-                self._regularization_target = self._x_limits.sum(axis=-1)[:len(self._control_symbols)] * 0.5
-                self._has_reg_target[:len(self._control_symbols)] = True
+                self._regularization_target = self._q_pos_limits.sum(axis=-1)[:len(self._control_symbols)] * 0.5
+                self._has_reg_target[:len(self._control_symbols)] = self._regularization_weight != 0.0
             else:
                 self._regularization_target = np.zeros(len(self._control_symbols))
                 for x, c in enumerate(self._control_symbols):
@@ -309,3 +313,13 @@ class QPController:
         if self._last_x_dot is None:
             return False
         return (np.abs(self._last_x_dot) <= tol).all()
+
+    @cached_property
+    def symbols(self) -> set[kv.Symbol]:
+        return ((self._A.symbols if self._A is not None else set())
+                | (self._G.symbols if self._G is not None else set())
+                | (self._costs.symbols if self._costs is not None else set())
+                | (self._b.symbols if self._b is not None else set())
+                | (self._h.symbols if self._h is not None else set())
+        )
+                

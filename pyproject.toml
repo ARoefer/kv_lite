@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kineverse"
-version = "2025.11.16"
+version = "2026.05.01.1"
 authors = [
   { name="Adrian Röfer", email="aroefer@cs.uni-freiburg.de" },
 ]
@@ -32,4 +32,7 @@ qp  = ["qpsolvers[open_source_solvers]"]
 [project.urls]
 Homepage = "https://github.com/ARoefer/kv_lite"
 Issues = "https://github.com/ARoefer/kv_lite/issues"
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
 
