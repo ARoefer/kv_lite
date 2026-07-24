@@ -75,6 +75,95 @@ def cross(u, v):
                      u[..., 2] * v[..., 0] - u[..., 0] * v[..., 2],
                      u[..., 0] * v[..., 1] - u[..., 1] * v[..., 0], 0]]).T
 
+def skew(v : KVArray) -> KVArray:
+    """Batched hat operator: maps a (..., 3) vector to a (..., 3, 3) skew-symmetric matrix."""
+    dtype = float if not isinstance(v, KVArray) or not v.is_symbolic else object
+    out   = zeros((3, 3), dtype=dtype) if v.ndim == 1 else zeros(v.shape[:-1] + (3, 3), dtype=dtype)
+    out[..., 0, 1] = -v[..., 2]
+    out[..., 0, 2] =  v[..., 1]
+    out[..., 1, 0] =  v[..., 2]
+    out[..., 1, 2] = -v[..., 0]
+    out[..., 2, 0] = -v[..., 1]
+    out[..., 2, 1] =  v[..., 0]
+    return out
+
+
+def unskew(m : KVArray) -> KVArray:
+    """Batched vee operator: maps a (..., 3, 3) skew-symmetric matrix to a (..., 3) vector."""
+    return (m[..., (2, 0, 1), (1, 2, 0)] - m[..., (1, 2, 0), (2, 0, 1)]) / 2
+
+
+def diff(expr : KVArray, symbol) -> KVArray:
+    """Derivative of a KVArray w.r.t. a single symbol, same shape as `expr`.
+
+    Thin wrapper over `KVArray.jacobian`, which appends the symbol axis and then squeezes
+    the length-1 axis away — so a 4x4 transform yields a 4x4 derivative. A fully numeric
+    `expr` yields a same-shaped zero array.
+    """
+    return expr.jacobian([symbol])
+
+
+def jacobian_column(fk : KVArray, symbol) -> KVArray:
+    """One column of a 6xn spatial body Jacobian, in [omega; v] ordering.
+
+    `fk` is the 4x4 homogeneous transform of the body in the reference frame. The angular
+    part uses the **spatial** angular velocity vee(dR @ R^T) (expressed in the reference
+    frame), required for consistency with `spatial_inertia`. Using R^T @ dR instead would
+    give the body angular velocity and is wrong here.
+    """
+    dT = diff(fk, symbol)               # 4x4
+    R  = fk[:3, :3]
+    v  = dT[:3,  3]                      # linear part, taken directly
+    w  = unskew(dT[:3, :3].dot(R.T))     # angular part via vee(R_dot @ R^T)
+    return hstack([w, v])               # [omega; v]
+
+
+def adjoint(T : KVArray) -> KVArray:
+    """6x6 adjoint of a 4x4 homogeneous transform, in [omega; v] (angular-first) ordering.
+
+    Maps a spatial twist expressed in the child frame to the same twist expressed in the
+    parent frame:  Ad_T = [[R, 0], [skew(p) R, R]].
+    """
+    R  = T[:3, :3]
+    p  = T[:3,  3]
+    Ad = zeros((6, 6), dtype=object if is_symbolic(T) else float)
+    Ad[:3, :3] = R
+    Ad[3:, :3] = skew(p).dot(R)
+    Ad[3:, 3:] = R
+    return Ad
+
+
+def spatial_inertia(inertial, ref_T_body : KVArray) -> KVArray:
+    """6x6 spatial inertia about the **body frame origin**, in [omega; v] ordering.
+
+    `inertial` is duck-typed (fields `mass`, `origin`, `moments`) to avoid importing
+    `model.Inertial` here — `model` already imports `spatial`. `moments` is the inertia
+    tensor about the CoM expressed in the frame defined by `origin` (URDF convention).
+
+    The reference point is the body frame origin, matching `jacobian_column`, whose linear
+    part is the velocity of that same frame origin (the hybrid geometric Jacobian). The
+    parallel-axis offset `d` is therefore the CoM position **relative to the body frame
+    origin**, not the absolute CoM position — using the absolute position would double-count
+    the offset and inflate `J^T I J`. Both J and I are referenced at the body's own frame
+    origin; the resulting per-body `J^T I J` term is internally consistent, and summing them
+    yields the correct configuration-space mass matrix (which is frame-independent).
+    """
+    m         = inertial.mass
+    ref_T_com = ref_T_body.dot(inertial.origin)
+    R         = ref_T_com[:3, :3]
+    d         = ref_T_com[:3, 3] - ref_T_body[:3, 3]   # CoM offset from body frame origin, ref frame
+
+    I  = R.dot(inertial.moments).dot(R.T)      # inertia about CoM, rotated into ref frame
+    dx = skew(d)
+
+    M6 = zeros((6, 6), dtype=object if (is_symbolic(ref_T_com) or is_symbolic(I)) else float)
+    M6[:3, :3] = I + m * dx.dot(dx.T)          # parallel-axis shift from CoM to frame origin
+    M6[:3, 3:] = m * dx
+    M6[3:, :3] = m * dx.T
+    M6[3:, 3:] = m * eye(3)
+    return M6
+
+
 def rotation_vector_from_matrix(rotation_matrix):
     rm = rotation_matrix
 

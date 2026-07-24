@@ -41,6 +41,19 @@ class URDFJoint(ConstrainedEdge):
 
         super().__init__(parent, child, constraints)
 
+    @property
+    def symbols(self) -> frozenset:
+        """DoFs appearing in this joint's transform: the joint variable (or, for a mimic
+        joint, the symbols of the driving expression) plus any symbolic origin/axis. Fixed
+        joints contribute none. Required so `get_mass_matrix` sees URDF joints as active."""
+        out = set()
+        if self.type != 'fixed' and self.position is not None:
+            out |= set(self.position.symbols)
+        for arr in (self.origin, self.axis):
+            if isinstance(arr, gm.KVArray) and arr.is_symbolic:
+                out |= set(arr.symbols)
+        return frozenset(out)
+
     def eval(self, graph, current_tf : gm.KVArray) -> gm.KVArray:
         if self.type == 'fixed':
             return self.origin.dot(current_tf)

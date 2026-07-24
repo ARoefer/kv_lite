@@ -53,6 +53,10 @@ class TransformEdge(DirectedEdge):
     def eval(self, graph, current_tf : gm.KVArray) -> gm.KVArray:
         return self._transform.dot(current_tf)
 
+    @property
+    def symbols(self) -> frozenset:
+        return self._transform.symbols
+
 
 class ConstrainedTransformEdge(ConstrainedEdge):
     def __init__(self, parent, child, tf : gm.Transform, constraints=None) -> None:
@@ -61,6 +65,10 @@ class ConstrainedTransformEdge(ConstrainedEdge):
 
     def eval(self, graph, current_tf : gm.KVArray) -> gm.KVArray:
         return self._transform.dot(current_tf)
+
+    @property
+    def symbols(self) -> frozenset:
+        return self._transform.symbols
 
 
 class Model(Graph):

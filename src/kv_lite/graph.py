@@ -16,6 +16,13 @@ class DirectedEdge():
     def eval(self, graph, current_tf : gm.KVArray) -> gm.KVArray:
         pass
 
+    @property
+    def symbols(self) -> frozenset:
+        """Symbols (DoFs) appearing in this edge's transform. Base has none; subclasses
+        carrying a transform override this. `get_mass_matrix` relies on it to find the
+        active edges for a requested symbol set."""
+        return frozenset()
+
 
 @dataclass
 class Frame:
@@ -217,6 +224,105 @@ class Graph():
             raise KeyError(f'Unknown frame "{node_name}".')
         
         return self._incoming_edges[node_name] if node_name in self._incoming_edges else None
+
+    def _get_children_index(self) -> dict:
+        """Builds a parent -> [child, ...] index from the incoming-edge map, on demand.
+
+        Not cached: maintaining an outgoing structure would add invalidation burden to
+        add_edge/remove_edge for no measured benefit. Revisit only if profiling shows it.
+        """
+        children = {}
+        for child, edge in self._incoming_edges.items():
+            children.setdefault(edge.parent, []).append(child)
+        return children
+
+    def get_subtree(self, root : Path) -> List[Path]:
+        """All frame names in the subtree rooted at `root`, inclusive of `root`."""
+        if root not in self._nodes:
+            raise KeyError(f'Unknown frame "{root}"')
+
+        children = self._get_children_index()
+        out      = []
+        stack    = [root]
+        while stack:
+            current = stack.pop()
+            out.append(current)
+            stack.extend(children.get(current, []))
+        return out
+
+    def body_jacobian(self, body_name : Path, symbols, source_frame : Path = Path('world')) -> gm.KVArray:
+        """6xn spatial body Jacobian of `body_name` in `source_frame`, [omega; v] ordering.
+
+        Column `i` is the twist induced by `symbols[i]`; columns for symbols the body's FK
+        does not depend on are exactly zero.
+        """
+        fk = self.get_fk(body_name, source_frame).transform
+        J  = gm.zeros((6, len(symbols)), dtype=object)
+        for i, s in enumerate(symbols):
+            J[:, i] = gm.jacobian_column(fk, s)
+        return J
+
+    def get_mass_matrix(self, symbols, source_frame : Path = Path('world')) -> gm.KVArray:
+        """Joint-space mass matrix M(q) as an n x n symbolic KVArray, n = len(symbols).
+
+        Built from the Jacobian formulation  M = sum_i J_i^T I_i J_i  over all bodies
+        (frames carrying an `inertial`), with each J_i and I_i expressed in `source_frame`,
+        in [omega; v] (angular-first) ordering. Symbol ordering of the output follows the
+        order of `symbols`.
+
+        Caveats:
+        - **Non-inertial source_frame.** If `source_frame`'s own pose depends on any of the
+          requested symbols, the result describes relative motion and is not a valid
+          rigid-body mass matrix (fictitious-force terms are missing). This raises rather
+          than silently returning a wrong matrix.
+        - **Expression size.** M has n**2 configuration-dependent entries; symbolic
+          expansion may blow up for very high-DoF systems. This is the naive reference
+          implementation a future CRBA version would be validated against.
+        """
+        symbol_set = set(symbols)
+        sym_index  = {s: i for i, s in enumerate(symbols)}
+        n          = len(symbols)
+
+        # 1. Guard the reference frame: it must not move under any requested symbol. Walk
+        #    the incoming-edge chain from source_frame up to its root and collect the DoFs
+        #    it depends on — this works even when source_frame is itself a (world-detached)
+        #    root, unlike a get_fk(world, source) lookup.
+        if source_frame not in self._nodes:
+            raise KeyError(f'source_frame "{source_frame}" is not known.')
+        src_symbols = set()
+        cursor      = source_frame
+        while cursor in self._incoming_edges:
+            edge        = self._incoming_edges[cursor]
+            src_symbols |= set(edge.symbols)
+            cursor       = edge.parent
+        clash = symbol_set & src_symbols
+        if clash:
+            raise ValueError(f'source_frame "{source_frame}" depends on requested symbols {clash}; '
+                             f'the result would not be a valid rigid-body mass matrix.')
+
+        # 2./3. Active edges -> flood down -> per-body union of active symbols (dedup by body).
+        body_symbols = {}
+        for edge in self._incoming_edges.values():
+            active = symbol_set & set(edge.symbols)
+            if not active:
+                continue
+            for name in self.get_subtree(edge.child):
+                if getattr(self._nodes[name], 'inertial', None) is not None:
+                    body_symbols.setdefault(name, set()).update(active)
+
+        # 4. Accumulate one J^T I J term per body.
+        M = gm.zeros((n, n), dtype=object)
+        for name, active in body_symbols.items():
+            body = self._nodes[name]
+            fk   = self.get_fk(name, source_frame).transform
+            I6   = gm.spatial_inertia(body.inertial, fk)
+            J    = gm.zeros((6, n), dtype=object)
+            for s in active:
+                J[:, sym_index[s]] = gm.jacobian_column(fk, s)
+            M = M + J.T.dot(I6).dot(J)
+
+        # 5. Symmetrize against asymmetry introduced during symbolic expansion.
+        return 0.5 * (M + M.T)
 
     def _gen_tf(self, chain : Iterable[DirectedEdge]) -> gm.KVArray:
         tf = gm.Transform.identity()

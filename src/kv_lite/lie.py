@@ -2,21 +2,11 @@ import numpy as np
 
 from . import spatial as kv
 
+# skew/unskew moved into spatial.py to be shared with the mass-matrix code; kept as
+# module-level aliases here so existing call sites keep working unchanged.
+_skew   = kv.skew
+_unskew = kv.unskew
 
-def _skew(v : kv.KVArray) -> kv.KVArray:
-    dtype = float if not isinstance(v, kv.KVArray) or not v.is_symbolic else object
-    out = kv.zeros((3, 3), dtype=dtype) if v.ndim == 1 else kv.zeros(v.shape[:-1] + (3, 3), dtype=dtype)
-    out[..., 0, 1] = -v[..., 2]
-    out[..., 0, 2] =  v[..., 1]
-    out[..., 1, 0] =  v[..., 2]
-    out[..., 1, 2] = -v[..., 0]
-    out[..., 2, 0] = -v[..., 1]
-    out[..., 2, 1] =  v[..., 0]
-    return out
-
-
-def _unskew(m : kv.KVArray) -> kv.KVArray:
-    return (m[..., (2, 0, 1), (1, 2, 0)] - m[..., (1, 2, 0), (2, 0, 1)]) / 2
 
 class SO3:
     @staticmethod
