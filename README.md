@@ -402,3 +402,13 @@ km.add_edge(kv.exp.TwistJointEdge(kv.vector3(1, 0, 0),
                                   kv.Position('q')))
 
 ```
+
+## Control
+
+KV-lite ships with a QP-controller which is similar to the one used to produce the examples in the original paper. To use this controller, install the additional dependencies as `pip install kv_lite[qp]`.
+
+The controller is meant to be used in a velocity-based control scheme in which the controller consumes a state vector $x$ and produces joint-velocities $\dot{q}$ as $\dot{q} = f(x)$. The internal controller follows the following form:
+
+$$y^* = \min_{y} \frac{1}{2} y^T P(x) y + q(x)^Ty \quad \text{s.t.}\quad G(x)y \leq h(x), \quad A(x) y = b, \quad lb \leq y \leq ub$$
+
+While the form is a standard QP, it is noteworthy that all the constants are parameterized over the observation $x$. The `OPController` class automatically encodes given objectives into expressions for this QP.
