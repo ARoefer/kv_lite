@@ -194,6 +194,98 @@ def test_energy_consistency():
             f"energy mismatch: matrix={ke_matrix}  bodies={ke_bodies}"
 
 
+def test_gravity_finite_difference():
+    """Self-contained: G(q) must equal the numerical gradient of the potential energy
+    U(q) = -sum_i m_i * g . p_i(q), computed independently of get_gravity_vector."""
+    rng = np.random.default_rng(21)
+    md, syms = random_tree(rng, n_links=4)
+    g   = np.array([0.0, 0.0, -9.81])
+    G   = md.get_gravity_vector(syms, gravity=tuple(g))
+    names = [Path(f'link{i}') for i in range(4)]
+
+    def potential(subs):
+        U = 0.0
+        for n in names:
+            body = md.get_frame(n)
+            p    = evalf(md.get_fk(n).transform.dot(body.inertial.origin)[:3, 3], subs)
+            U   -= body.inertial.mass * g.dot(p)
+        return U
+
+    for _ in range(5):
+        base = {s: rng.uniform(-np.pi, np.pi) for s in syms}
+        G_kv = evalf(G, base).reshape(-1)
+        eps  = 1e-6
+        G_fd = np.zeros(len(syms))
+        for i, s in enumerate(syms):
+            up = dict(base); up[s] += eps
+            dn = dict(base); dn[s] -= eps
+            G_fd[i] = (potential(up) - potential(dn)) / (2 * eps)
+        assert np.allclose(G_kv, G_fd, atol=1e-5), f"{G_kv} != {G_fd}"
+
+
+def test_operational_space_inertia():
+    """Lambda = (J M^-1 J^T)^-1 must be symmetric PD and satisfy its defining identity."""
+    # Need >= 6 DOF so the 6xn tip Jacobian can span the full task space; otherwise
+    # J M^-1 J^T is rank-deficient and Lambda does not exist.
+    rng = np.random.default_rng(31)
+    md, syms = random_tree(rng, n_links=7)
+    M_sym = md.get_mass_matrix(syms)
+    J_sym = md.body_jacobian(Path('link6'), syms)   # 6 x n Jacobian of the tip frame
+    subs  = {s: rng.uniform(-np.pi, np.pi) for s in syms}
+    M = evalf(M_sym, subs)
+    J = evalf(J_sym, subs)
+    Lam = gm.operational_space_inertia(M, J)
+    assert np.allclose(Lam, Lam.T, atol=1e-9), "Lambda not symmetric"
+    assert np.linalg.eigvalsh(0.5 * (Lam + Lam.T)).min() > 1e-9, "Lambda not PD"
+    assert np.allclose(np.linalg.inv(Lam), J @ np.linalg.inv(M) @ J.T, atol=1e-9), "identity violated"
+
+
+def test_cross_check_pybullet_dynamics():
+    """External reference: gravity G(q) and Coriolis C(q,q') against PyBullet inverse
+    dynamics on the KUKA iiwa. With q''=0, tau = C q' + G, so it validates both together
+    (and, jointly with the mass-matrix check, the full manipulator equation)."""
+    import pytest
+    p             = pytest.importorskip('pybullet')
+    pybullet_data = pytest.importorskip('pybullet_data')
+    from kv_lite import Symbol
+    from kv_lite.urdf_utils import load_urdf
+
+    urdf_rel = 'kuka_iiwa/model.urdf'
+    urdf_str = (Path(pybullet_data.getDataPath()) / urdf_rel).read_text()
+    md   = Model(root_node=Path('world'))
+    uobj = load_urdf(md, urdf_str)
+    dj   = uobj.dynamic_joints
+
+    cid  = p.connect(p.DIRECT)
+    try:
+        p.setAdditionalSearchPath(pybullet_data.getDataPath())
+        p.setGravity(0, 0, -9.81)
+        body    = p.loadURDF(urdf_rel, useFixedBase=True, flags=p.URDF_USE_INERTIA_FROM_FILE)
+        movable = [p.getJointInfo(body, i)[1].decode() for i in range(p.getNumJoints(body))
+                   if p.getJointInfo(body, i)[2] in (p.JOINT_REVOLUTE, p.JOINT_PRISMATIC)]
+        n       = len(movable)
+        q_syms  = [dj[jn].position for jn in movable]
+        qd_syms = [Symbol(f'qd{i}') for i in range(n)]
+
+        G = md.get_gravity_vector(q_syms, source_frame=uobj.root)
+        C = md.get_coriolis_matrix(q_syms, qd_syms, source_frame=uobj.root)
+
+        rng = np.random.default_rng(11)
+        for _ in range(6):
+            q  = rng.uniform(-2.5, 2.5, n)
+            qd = rng.uniform(-1.5, 1.5, n)
+            sq = {s: v for s, v in zip(q_syms, q)}
+            sa = {**sq, **{s: v for s, v in zip(qd_syms, qd)}}
+            G_kv = evalf(G, sq).reshape(-1)
+            C_kv = evalf(C, sa)
+            id_g  = np.array(p.calculateInverseDynamics(body, list(q), [0.] * n, [0.] * n))
+            id_cg = np.array(p.calculateInverseDynamics(body, list(q), list(qd), [0.] * n))
+            assert np.allclose(G_kv,             id_g,  atol=1e-6), "gravity mismatch"
+            assert np.allclose(C_kv @ qd + G_kv, id_cg, atol=1e-6), "coriolis mismatch"
+    finally:
+        p.disconnect(cid)
+
+
 def test_cross_check_pybullet_kuka():
     """External reference: match PyBullet's mass matrix on the KUKA iiwa (clean 7R).
 

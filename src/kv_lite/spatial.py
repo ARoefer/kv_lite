@@ -93,6 +93,21 @@ def unskew(m : KVArray) -> KVArray:
     return (m[..., (2, 0, 1), (1, 2, 0)] - m[..., (1, 2, 0), (2, 0, 1)]) / 2
 
 
+def operational_space_inertia(mass_matrix, jacobian) -> np.ndarray:
+    """Operational-space (task-space) inertia `Lambda = (J M^-1 J^T)^-1`.
+
+    **Numeric**, not symbolic: it takes already-evaluated `mass_matrix` (n x n) and
+    `jacobian` (m x n, e.g. the 6 x n output of `Graph.body_jacobian` for a target frame)
+    and returns an `m x m` ndarray. There is no symbolic matrix inverse in this backend, and
+    a symbolic `M^-1` would blow up for realistic DoF counts, so evaluate `M` and `J` at a
+    configuration first, then call this. Unlike the mass matrix (which aggregates over all
+    bodies) this legitimately depends on a chosen target frame, via its Jacobian.
+    """
+    M = np.asarray(mass_matrix, dtype=float)
+    J = np.asarray(jacobian,    dtype=float)
+    return np.linalg.inv(J.dot(np.linalg.inv(M)).dot(J.T))
+
+
 def diff(expr : KVArray, symbol) -> KVArray:
     """Derivative of a KVArray w.r.t. a single symbol, same shape as `expr`.
 

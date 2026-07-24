@@ -250,6 +250,51 @@ class Graph():
             stack.extend(children.get(current, []))
         return out
 
+    def get_gravity_vector(self, symbols, gravity=(0, 0, -9.81), source_frame : Path = Path('world')) -> gm.KVArray:
+        """Generalized gravity forces G(q) as an n-vector, n = len(symbols).
+
+        `G = dU/dq` with the potential energy `U = -sum_i m_i * g . p_i`, where `g` is the
+        gravitational acceleration vector (default `(0, 0, -9.81)`) and `p_i` is body `i`'s
+        CoM position in `source_frame`. Sign convention matches the manipulator equation
+        `M q'' + C q' + G = tau`. Bodies not depending on `symbols` contribute zero.
+        """
+        g = gm.KVArray([gravity[0], gravity[1], gravity[2]])
+        U = 0
+        for name in self.get_subtree(source_frame):
+            body = self._nodes[name]
+            if getattr(body, 'inertial', None) is None:
+                continue
+            p  = self.get_fk(name, source_frame).transform.dot(body.inertial.origin)[:3, 3]
+            U  = U - body.inertial.mass * g.dot(p)
+        if not isinstance(U, (gm.KVArray, gm.KVExpr)):   # no bodies in the subtree
+            return gm.zeros(len(symbols))
+        return gm.KVArray(U.jacobian(symbols)).reshape((len(symbols),))
+
+    def get_coriolis_matrix(self, symbols, velocities, source_frame : Path = Path('world')) -> gm.KVArray:
+        """Coriolis/centrifugal matrix C(q, q') as an n x n KVArray, so that `C @ q'` gives
+        the Coriolis/centrifugal generalized forces.
+
+        Uses Christoffel symbols of the first kind:
+            C[i,j] = sum_k 0.5 * (dM[i,j]/dq_k + dM[i,k]/dq_j - dM[j,k]/dq_i) * q'_k
+        `velocities` are the q'_k symbols, positionally matched to `symbols`. Correct but
+        symbolically expensive for large systems (an n**3 derivative tensor).
+        """
+        n = len(symbols)
+        if n != len(velocities):
+            raise ValueError(f'symbols ({n}) and velocities ({len(velocities)}) must have equal length.')
+
+        M  = self.get_mass_matrix(symbols, source_frame)
+        dM = gm.KVArray(M.jacobian(symbols)).reshape((n, n, n))   # dM[i,j,k] = dM_ij / dq_k
+
+        C = gm.zeros((n, n), dtype=object)
+        for i in range(n):
+            for j in range(n):
+                acc = 0
+                for k in range(n):
+                    acc = acc + 0.5 * (dM[i, j, k] + dM[i, k, j] - dM[j, k, i]) * velocities[k]
+                C[i, j] = acc
+        return C
+
     def body_jacobian(self, body_name : Path, symbols, source_frame : Path = Path('world')) -> gm.KVArray:
         """6xn spatial body Jacobian of `body_name` in `source_frame`, [omega; v] ordering.
 

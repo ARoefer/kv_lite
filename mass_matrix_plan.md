@@ -325,18 +325,30 @@ symbolic origin/axis). This is the third and last transform-bearing edge type.
 
 ---
 
-## Phase 6 — Extensions (optional; nearly free once `M` exists)
+## Phase 6 — Extensions  ✅ DONE
 
-Because everything is symbolic, the rest of rigid-body dynamics follows by
-differentiation. Ship Phases 0–5 first.
+Because everything is symbolic, the rest of rigid-body dynamics follows by differentiation.
 
-- **Gravity vector:** `G = dU/dq` where `U = sum_i m_i * g . p_i`. A few lines.
-- **Coriolis/centrifugal:** Christoffel symbols of the first kind,
-  `C[i,j] = sum_k 0.5*(dM[i,j]/dq_k + dM[i,k]/dq_j - dM[j,k]/dq_i) * q_dot_k`.
-  Correct and requires no new machinery, but symbolically expensive for large systems.
-- **Operational-space inertia:** `(J M^-1 J^T)^-1` for a chosen frame. Note this is a
-  *different function* that legitimately takes a target frame — unlike `get_mass_matrix`,
-  which aggregates over all bodies and therefore has no meaningful target argument.
+- **Gravity vector** — `Graph.get_gravity_vector(symbols, gravity=(0,0,-9.81), source_frame)`.
+  `G = dU/dq`, `U = -sum_i m_i * g . p_i`. ✅ Matches PyBullet inverse dynamics (q'=q''=0)
+  to ~1e-14, and a self-contained finite-difference-of-`U` check. *Impl note:* the summed
+  potential is a scalar `KVExpr` (not a `KVArray`), so the "no bodies" guard must accept
+  both types — the first cut returned zeros because of this.
+- **Coriolis/centrifugal** — `Graph.get_coriolis_matrix(symbols, velocities, source_frame)`.
+  Christoffel symbols of the first kind,
+  `C[i,j] = sum_k 0.5*(dM[i,j]/dq_k + dM[i,k]/dq_j - dM[j,k]/dq_i) * q'_k`, built from the
+  `n**3` derivative tensor `M.jacobian(symbols)`. ✅ Validated together with gravity against
+  PyBullet inverse dynamics (q''=0 ⇒ `tau = C q' + G`) to ~1e-14 — which, with the separate
+  mass-matrix check, validates the full manipulator equation `M q'' + C q' + G = tau`.
+- **Operational-space inertia** — `spatial.operational_space_inertia(M, J)` returning
+  `(J M^-1 J^T)^-1` for a target frame's Jacobian. **Numeric, not symbolic**: the backend has
+  no general matrix inverse (only `Transform.inverse` for 4x4 homogeneous transforms), and a
+  symbolic `M^-1` would blow up anyway — so evaluate `M` and `J = body_jacobian(target, ...)`
+  at a configuration, then call this. Requires the task Jacobian to have full row rank (≥ 6
+  DoF for a 6-D task, else `J M^-1 J^T` is singular). ✅ Validated for symmetry, PD, and the
+  defining identity on a 7-DoF tree.
+
+All three live in `test/test_mass_matrix.py`.
 
 ---
 
