@@ -275,12 +275,18 @@ class KVExpr():
 
     def eval(self, args : dict = {}) -> float:
         if self._function is None:
-            self._function = _speed_up(self._ca_data, self.ordered_symbols, (1,))
+            if self.is_symbolic:
+                self._function = _speed_up(self._ca_data, self.ordered_symbols, (1,))
+            else:
+                self._function = lambda _: np.ones((1,)) * float(self._ca_data)
         return self._function(args).item()
 
     def unchecked_eval(self, args) -> np.ndarray:
         if self._function is None:
-            self._function = _speed_up(self._ca_data, self.ordered_symbols, (1,))
+            if self.is_symbolic:
+                self._function = _speed_up(self._ca_data, self.ordered_symbols, (1,))
+            else:
+                self._function = lambda _: np.ones((1,)) * float(self._ca_data)
         return self._function.call_unchecked(args)
 
     def as_casadi(self):
