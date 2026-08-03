@@ -85,6 +85,78 @@ class TestBinaryArithmetic:
         assert isinstance(self.a + self.b, KVExpr)
 
 
+class TestComparison:
+    @pytest.fixture(autouse=True)
+    def exprs(self):
+        self.two   = KVExpr(ca.SX(2.0))
+        self.three = KVExpr(ca.SX(3.0))
+        self.sym   = Position('cmp_x')
+
+    @pytest.mark.parametrize('op,expected', [
+        (operator.lt,  True),
+        (operator.le,  True),
+        (operator.gt,  False),
+        (operator.ge,  False),
+    ])
+    def test_constant_op_constant(self, op, expected):
+        assert op(self.two, self.three) is expected
+
+    @pytest.mark.parametrize('op,expected', [
+        (operator.lt,  False),
+        (operator.le,  True),
+        (operator.gt,  False),
+        (operator.ge,  True),
+    ])
+    def test_constant_op_equal_constant(self, op, expected):
+        assert op(self.two, KVExpr(ca.SX(2.0))) is expected
+
+    @pytest.mark.parametrize('op,expected', [
+        (operator.lt,  True),
+        (operator.le,  True),
+        (operator.gt,  False),
+        (operator.ge,  False),
+    ])
+    def test_constant_op_scalar(self, op, expected):
+        assert op(self.two, 3.0) is expected
+
+    @pytest.mark.parametrize('op,expected', [
+        (operator.lt,  False),
+        (operator.le,  False),
+        (operator.gt,  True),
+        (operator.ge,  True),
+    ])
+    def test_scalar_op_constant(self, op, expected):
+        # Reflected: Python swaps the operands and uses the mirrored operator
+        assert op(3.0, self.two) is expected
+
+    def test_constant_expression_from_symbols(self):
+        x = Position('cmp_c')
+        assert (x - x + 4) > 3
+
+    @pytest.mark.parametrize('op', [operator.lt, operator.le, operator.gt, operator.ge])
+    def test_symbolic_lhs_raises(self, op):
+        with pytest.raises(ValueError):
+            op(self.sym * 2, 1.0)
+
+    @pytest.mark.parametrize('op', [operator.lt, operator.le, operator.gt, operator.ge])
+    def test_symbolic_rhs_raises(self, op):
+        with pytest.raises(ValueError):
+            op(self.two, self.sym * 2)
+
+    def test_sorting_constants(self):
+        exprs = [KVExpr(ca.SX(v)) for v in (3.0, 1.0, 2.0)]
+        assert [float(e) for e in sorted(exprs)] == [1.0, 2.0, 3.0]
+
+    def test_comparison_against_array_is_elementwise(self):
+        result = self.two < np.array([1.0, 3.0])
+        np.testing.assert_array_equal(result, [False, True])
+
+    def test_symbol_comparison_still_orders_by_name(self):
+        a, b = Position('cmp_sa'), Position('cmp_sb')
+        assert a < b
+        assert b > a
+
+
 class TestInPlaceArithmetic:
     def _make_expr(self, name):
         x = Position(name)

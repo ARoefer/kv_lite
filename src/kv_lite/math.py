@@ -1,5 +1,6 @@
-import casadi as ca
-import numpy  as np
+import casadi   as ca
+import numpy    as np
+import operator
 
 from math   import prod
 from typing import Iterable, \
@@ -212,9 +213,32 @@ class KVExpr():
             return KVArray([self])**other
         return KVExpr(self._ca_data ** other)
 
+    def _compare(self, other, op, op_name):
+        # Let numpy handle the element-wise case
+        if isinstance(other, np.ndarray):
+            return NotImplemented
+
+        other = other if isinstance(other, KVExpr) else KVExpr(other)
+        if self.is_symbolic or other.is_symbolic:
+            raise ValueError(f'KVExpr.{op_name}() does not support symbolic expressions. '
+                             f'Evaluate the expressions first and compare their values.')
+        return op(float(self), float(other))
+
+    def __lt__(self, other) -> bool:
+        return self._compare(other, operator.lt, '__lt__')
+
+    def __le__(self, other) -> bool:
+        return self._compare(other, operator.le, '__le__')
+
+    def __gt__(self, other) -> bool:
+        return self._compare(other, operator.gt, '__gt__')
+
+    def __ge__(self, other) -> bool:
+        return self._compare(other, operator.ge, '__ge__')
+
     def __str__(self):
         return str(self._ca_data)
-    
+
     def __repr__(self):
         return f'KV({self._ca_data})'
 
