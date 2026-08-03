@@ -61,7 +61,16 @@ class Graph():
 
         self._nodes[root_node] = Frame(root_node)
 
-    def reset_root(self, name : str):
+    @staticmethod
+    def _as_path(name : Union[Frame, Path, str]) -> Path:
+        """Frame nodes are keyed by Path, so coerce any frame reference
+           (a Frame, a Path, or a plain str) to the Path used as its key."""
+        if isinstance(name, Frame):
+            return name.name
+        return Path(name)
+
+    def reset_root(self, name : Union[Frame, Path, str]):
+        name = self._as_path(name)
         if name not in self._nodes:
             raise KeyError(f'Cannot make unknown frame {name} root.')
         self._root_node = name
@@ -73,8 +82,8 @@ class Graph():
     def add_frame(self, frame : Frame):
         self._nodes[frame.name] = frame
 
-    def remove_frame(self, frame : Union[Frame, str]):
-        name = frame.name if isinstance(frame, Frame) else frame
+    def remove_frame(self, frame : Union[Frame, Path, str]):
+        name = self._as_path(frame)
 
         if name not in self._nodes:
             raise KeyError(f'Frame "{name}" is unknown')
@@ -87,15 +96,18 @@ class Graph():
     def get_frames(self) -> List[str]:
         return list(self._nodes.keys())
 
-    def get_frame(self, name : Path) -> Frame:
+    def get_frame(self, name : Union[Frame, Path, str]) -> Frame:
+        name = self._as_path(name)
         if name not in self._nodes:
             raise KeyError(f'Unknown frame "{name}"')
         return self._nodes[name]
-    
-    def has_frame(self, name : Path) -> bool:
-        return name in self._nodes
 
-    def get_fk(self, target_frame : str, source_frame : str = Path('world')):
+    def has_frame(self, name : Union[Frame, Path, str]) -> bool:
+        return self._as_path(name) in self._nodes
+
+    def get_fk(self, target_frame : Union[Frame, Path, str], source_frame : Union[Frame, Path, str] = Path('world')):
+        target_frame = self._as_path(target_frame)
+        source_frame = self._as_path(source_frame)
         if target_frame not in self._nodes:
             raise KeyError(f'Target frame "{target_frame}" is not known.')
         
@@ -212,10 +224,11 @@ class Graph():
     def get_edges(self) -> List[DirectedEdge]:
         return list(self._incoming_edges.values())
 
-    def get_incoming_edge(self, node_name : Path) -> DirectedEdge:
+    def get_incoming_edge(self, node_name : Union[Frame, Path, str]) -> DirectedEdge:
+        node_name = self._as_path(node_name)
         if node_name not in self._nodes:
             raise KeyError(f'Unknown frame "{node_name}".')
-        
+
         return self._incoming_edges[node_name] if node_name in self._incoming_edges else None
 
     def _gen_tf(self, chain : Iterable[DirectedEdge]) -> gm.KVArray:
@@ -235,7 +248,10 @@ class Graph():
 
         return out
 
-    def get_root(self, start : Path, filter : set[Path]=None, return_path : bool=False) -> Path | list[Path]:
+    def get_root(self, start : Union[Frame, Path, str], filter : set[Path]=None, return_path : bool=False) -> Path | list[Path]:
+        start = self._as_path(start)
+        if filter is not None:
+            filter = {self._as_path(f) for f in filter}
         # The node is disconnected
         if start not in self._nodes:
             raise KeyError(f'Unknown node {start}')
