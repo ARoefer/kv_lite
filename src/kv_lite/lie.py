@@ -55,29 +55,49 @@ class SO3:
 
     @staticmethod
     def J_right(w, theta=None, epsilon=1e-6) -> kv.KVArray:
+        """Right-Jacobian of SO3: exp(w + dw) = exp(w) exp(J_right(w) dw).
+
+        Relates a perturbation of the rotation vector to a body-frame angular velocity.
+        """
         if theta is None:
             theta = kv.norm(w) + epsilon
         S = _skew(w)
 
-        # Right-Jacobian of SO3
         return kv.eye(3) - ((1 - kv.cos(theta)) / theta**2) * S + ((theta - kv.sin(theta)) / theta**3) * S @ S
 
     @staticmethod
     def J_right_inv(w, theta=None, epsilon=1e-6) -> kv.KVArray:
+        """Inverse right-Jacobian of SO3. Maps a body-frame angular velocity to the
+           rate of the rotation vector: d/dt w = J_right_inv(w) omega_body.
+        """
         if theta is None:
             theta = kv.norm(w) + epsilon
         S = _skew(w)
 
-        # Right-Jacobian of SO3
         return kv.eye(3) + 0.5 * S + (1/theta**2 - (1 + kv.cos(theta)) / (2 * theta * kv.sin(theta))) * S @ S
 
     @staticmethod
     def J_left(w, theta=None, epsilon=1e-6) -> kv.KVArray:
+        """Left-Jacobian of SO3: exp(w + dw) = exp(J_left(w) dw) exp(w).
+
+        Maps the rate of the rotation vector to a world-frame angular velocity:
+        omega_world = J_left(w) @ d/dt w. Equal to ``J_right(w).T``.
+        """
         if theta is None:
             theta = kv.norm(w) + epsilon
         S = _skew(w)
 
-        # Left-Jacobian of SO3
+        return kv.eye(3) + ((1 - kv.cos(theta)) / theta**2) * S + ((theta - kv.sin(theta)) / theta**3) * S @ S
+
+    @staticmethod
+    def J_left_inv(w, theta=None, epsilon=1e-6) -> kv.KVArray:
+        """Inverse left-Jacobian of SO3. Maps a world-frame angular velocity to the
+           rate of the rotation vector: d/dt w = J_left_inv(w) omega_world.
+        """
+        if theta is None:
+            theta = kv.norm(w) + epsilon
+        S = _skew(w)
+
         return kv.eye(3) - (S / 2) + (1 / (theta**2) - kv.sin(theta) / (2 * theta * (1 - kv.cos(theta)))) * (S @ S)
 
 
@@ -138,5 +158,5 @@ class SE3:
         w = SO3.logmap(mat, epsilon=epsilon)
 
         t = mat[:3, 3]
-        v = SO3.J_left(w, epsilon=epsilon) @ t
+        v = SO3.J_left_inv(w, epsilon=epsilon) @ t
         return kv.hstack((w, v))
