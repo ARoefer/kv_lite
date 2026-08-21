@@ -285,7 +285,7 @@ class QPController:
 
         if self._position_integration_factor is not None:
             # Gap to the boundary scaled by temporal integration step
-            pos_limit_gap = (self._q_pos_limits - q[:len(self._control_symbols),None]) / self._position_integration_factor
+            pos_limit_gap = (self._q_pos_limits - q_pos) / self._position_integration_factor
             limits.T[0, :len(self._control_symbols)] = np.max((limits.T[0, :len(self._control_symbols)], pos_limit_gap.T[0]), axis=0)
             limits.T[1, :len(self._control_symbols)] = np.min((limits.T[1, :len(self._control_symbols)], pos_limit_gap.T[1]), axis=0)
 
