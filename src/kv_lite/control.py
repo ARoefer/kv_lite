@@ -284,10 +284,15 @@ class QPController:
             limits = self._x_limits
 
         if self._position_integration_factor is not None:
-            # Gap to the boundary scaled by temporal integration step
-            pos_limit_gap = (self._q_pos_limits - q_pos) / self._position_integration_factor
-            limits.T[0, :len(self._control_symbols)] = np.max((limits.T[0, :len(self._control_symbols)], pos_limit_gap.T[0]), axis=0)
-            limits.T[1, :len(self._control_symbols)] = np.min((limits.T[1, :len(self._control_symbols)], pos_limit_gap.T[1]), axis=0)
+            # Velocity that closes the gap to each position limit within one horizon. Inside the
+            # limits it tightens the bound towards the nearer limit. Past a limit the gap is
+            # clamped at zero, so the joint may not move further out but is never forced back,
+            # which keeps lower bound <= 0 <= upper bound and the QP feasible.
+            n             = len(self._control_symbols)
+            limits        = limits.copy()
+            pos_limit_gap = (self._q_pos_limits - q_pos[:, None]) / self._position_integration_factor
+            limits[:n, 0] = np.maximum(limits[:n, 0], np.minimum(pos_limit_gap[:, 0], 0.0))
+            limits[:n, 1] = np.minimum(limits[:n, 1], np.maximum(pos_limit_gap[:, 1], 0.0))
 
         x_dot = solve_qp(P=P, q=q,
                          A=A, b=b, G=G, h=h,
